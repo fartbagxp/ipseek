@@ -1,3 +1,5 @@
+mod aws;
+
 use axum::{routing::get, Router, extract::Path, response::Json};
 use log::debug;
 use ipnet::IpNet;
@@ -9,24 +11,7 @@ use tokio::sync::RwLock;
 use iptrie::Ipv4Prefix;
 use iptrie::Ipv4RTrieSet;
 
-mod aws;
-
 use crate::aws::{CidrBlock, AwsCidrRanges};
-
-#[derive(Debug, Deserialize)]
-pub struct CidrBlock {
-    ip_prefix: String,
-    region: String,
-    service: String,
-    network_border_group: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AwsCidrRanges {
-    sync_token: String,
-    create_date: String,
-    prefixes: Vec<CidrBlock>,
-}
 
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
