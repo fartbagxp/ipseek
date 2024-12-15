@@ -3,16 +3,11 @@ mod aws;
 use aws::{fetch_aws_cidr_ranges, find_matching_cidr};
 use axum::{routing::get, Router, extract::Path, response::Json};
 use log::debug;
-use ipnet::IpNet;
 use reqwest::Error;
-use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use iptrie::Ipv4Prefix;
 use iptrie::Ipv4RTrieSet;
 
-use crate::aws::AwsCidrRanges;
 
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
