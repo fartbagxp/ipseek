@@ -5,7 +5,6 @@ use axum::{routing::get, Router, extract::Path, response::Json, Extension};
 use log::debug;
 use serde_json::json;
 use reqwest::Error;
-use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
