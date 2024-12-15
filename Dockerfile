@@ -15,7 +15,7 @@ RUN cargo build --release --bin ip-ranger
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime
-RUN apt-get install -y openssl ca-certificates
+RUN apt-get install -y openssl
 WORKDIR /app
 COPY --from=builder /app/target/release/ip-ranger /usr/local/bin
 ENTRYPOINT ["/usr/local/bin/ip-ranger"]
