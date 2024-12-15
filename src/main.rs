@@ -20,34 +20,6 @@ fn is_private_ip(ip: &IpAddr) -> bool {
     }
 }
 
-// async fn check_ip(
-//     Path(ip_str): Path<String>,
-//     state: Arc<AppState>,
-// ) -> Json<serde_json::Value> {
-//     debug!("Requested IP: {}", ip_str);
-
-//     let response = if let Ok(ip) = ip_str.parse::<IpAddr>() {
-//         let trie = state.ip_trie.read().await;
-//         if let Some(region) = trie.longest_match(ip) {
-//             serde_json::json!({
-//                 "error": "",
-//                 "data": format!("IP belongs to AWS range in region: {}", region)
-//             })
-//         } else {
-//             serde_json::json!({
-//                 "error": "",
-//                 "data": "IP does not belong to any AWS range"
-//             })
-//         }
-//     } else {
-//         serde_json::json!({
-//             "error": "Invalid IP address",
-//             "data": ""
-//         })
-//     };
-
-//     Json(response)
-// }
 pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     debug!("Requested IP: {}", ip_str);
     let response = if let Ok(ip) = ip_str.parse::<IpAddr>() {
@@ -72,35 +44,7 @@ pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     Json(response)
 }
 
-// async fn populate_ip_trie() -> Result<IpTrie<IpAddr, String>, Box<dyn std::error::Error>> {
-//     let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
-//     let mut trie = IpTrie::new();
-
-//     for cidr in aws_cidr_ranges.prefixes {
-//         // Parse the IP prefix and insert it into the trie
-//         if let Ok(ip_network) = cidr.ip_prefix.parse::<ipnet::IpNet>() {
-//             trie.insert(ip_network.addr(), cidr.region.clone());
-//         }
-//     }
-
-//     Ok(trie)
-// }
-
-// async fn check_ip_in_aws_ranges(
-//     ip: &IpAddr,
-//     trie: &IpTrie<IpAddr, String>,
-// ) -> Option<String> {
-//     trie.longest_match(*ip).map(|(_, region)| region.clone())
-// }
-
-// pub struct AppState {
-//     ip_trie: Arc<RwLock<IpTrie<IpAddr, String>>>,
-// }
-
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    env_logger::init();
-
+async fn build_trie() -> Result<Ipv4RTrieSet, Error> {
     let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
     println!("{:#?}", aws_cidr_ranges);
 
@@ -114,14 +58,27 @@ async fn main() -> Result<(), Error> {
     let iter = ipv4_prefixes.iter();
     let trie = Ipv4RTrieSet::from_iter(iter.cloned());
 
-    let ip = "51.0.28.5".parse::<Ipv4Addr>().unwrap();
-    if let Some(matching_cidr) = find_matching_cidr(&trie, ip, &aws_cidr_ranges) {
+    Ok(trie)
+}
+
+async fn find_matching_cidr_for_ip(trie: &Ipv4RTrieSet, ip: Ipv4Addr) -> Result<(), Error> {
+    let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
+    if let Some(matching_cidr) = find_matching_cidr(trie, ip, &aws_cidr_ranges) {
         println!("Matching CIDR: {:#?}", matching_cidr);
     } else {
         println!("No matching CIDR found for IP: {}", ip);
     }
+    Ok(())
+}
 
-    // Start the server
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    env_logger::init();
+
+    let trie = build_trie().await?;
+    let ip = "51.0.28.5".parse::<Ipv4Addr>().unwrap();
+    find_matching_cidr_for_ip(&trie, ip).await?;
+
     let app = Router::new()
         .route("/", get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }))
         .route("/:ip", get(check_ip));
