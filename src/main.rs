@@ -1,8 +1,14 @@
 mod aws;
 
+use aws::{fetch_aws_cidr_ranges, find_matching_cidr};
 use axum::{routing::get, Router, extract::Path, response::Json};
 use log::debug;
+use ipnet::IpNet;
+use reqwest::Error;
+use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use iptrie::Ipv4Prefix;
 use iptrie::Ipv4RTrieSet;
 
@@ -71,14 +77,6 @@ pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     Json(response)
 }
 
-// Function to fetch AWS CIDR ranges
-async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Box<dyn std::error::Error>> {
-    let url = "https://raw.githubusercontent.com/fartbagxp/aas-cidr-ranges/master/data/raw/aws.json";
-    let response = reqwest::get(url).await?.text().await?;
-    let aws_cidr_ranges: AwsCidrRanges = serde_json::from_str(&response)?;
-    Ok(aws_cidr_ranges)
-}
-
 // async fn populate_ip_trie() -> Result<IpTrie<IpAddr, String>, Box<dyn std::error::Error>> {
 //     let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
 //     let mut trie = IpTrie::new();
@@ -105,39 +103,28 @@ async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Box<dyn std::error::Er
 // }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Error> {
     env_logger::init();
 
-    let prefixes = [
-        "1.1.0.0/24",
-        "1.1.1.0/24",
-        "1.1.0.0/20",
-        "1.1.2.0/24"
-    ];
+    let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
+    println!("{:#?}", aws_cidr_ranges);
 
-    let iter = prefixes.iter().map(|x| x.parse::<Ipv4Prefix>().unwrap());
+    let ipv4_prefixes: Vec<Ipv4Prefix> = aws_cidr_ranges.prefixes
+        .iter()
+        .filter_map(|block| block.ip_prefix.parse::<Ipv4Prefix>().ok())
+        .collect();
 
-    // a set based on Patricia trie
-    let trie = Ipv4RTrieSet::from_iter(iter);
+    println!("IPv4 Prefixes: {:#?}", ipv4_prefixes);
 
-    // lpm lookup for Ipv4 address
-    assert_eq!(trie.lookup(&"1.1.1.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.1.0/24");
-    assert_eq!(trie.lookup(&"1.1.2.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.2.0/24");
+    let iter = ipv4_prefixes.iter();
+    let trie = Ipv4RTrieSet::from_iter(iter.cloned());
 
-    // lpm lookup for Ipv4 prefix also works
-    assert_eq!(trie.lookup(&"1.1.0.0/25".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/24");
-    assert_eq!(trie.lookup(&"1.1.0.0/21".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/20");
-
-    // now, compute the set based on LC-trie
-    let lctrie = trie.compress();
-
-    // lpm lookup for Ipv4 address
-    assert_eq!(lctrie.lookup(&"1.1.1.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.1.0/24");
-    assert_eq!(lctrie.lookup(&"1.1.2.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.2.0/24");
-
-    // lpm lookup for Ipv4 prefix also works
-    assert_eq!(lctrie.lookup(&"1.1.0.0/25".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/24");
-    assert_eq!(lctrie.lookup(&"1.1.0.0/21".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/20");
+    let ip = "51.0.28.5".parse::<Ipv4Addr>().unwrap();
+    if let Some(matching_cidr) = find_matching_cidr(&trie, ip, &aws_cidr_ranges) {
+        println!("Matching CIDR: {:#?}", matching_cidr);
+    } else {
+        println!("No matching CIDR found for IP: {}", ip);
+    }
 
     // Start the server
     let app = Router::new()
@@ -147,4 +134,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     println!("Listening on: {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
+
+    Ok(())
 }
