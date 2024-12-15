@@ -4,6 +4,7 @@ use serde::Deserialize;
 use iptrie::Ipv4RTrieSet;
 use std::net::Ipv4Addr;
 
+// #[allow(non_camel_case_types)]
 #[derive(Debug, Deserialize)]
 pub struct AwsCidrRanges {
     pub syncToken: String,
