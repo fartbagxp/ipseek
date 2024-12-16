@@ -1,9 +1,9 @@
-use axum::{routing::get, Router, Extension};
+use axum::{routing::get, Extension, Router};
 use ip_ranger::handler::check_ip;
+use ip_ranger::utils::{build_tries, AppState};
 use reqwest::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use ip_ranger::utils::{AppState, build_tries};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -16,7 +16,10 @@ async fn main() -> Result<(), Error> {
 
     // Start the server
     let app = Router::new()
-        .route("/", get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }))
+        .route(
+            "/",
+            get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }),
+        )
         .route("/:ip", get(check_ip))
         .layer(Extension(state));
 

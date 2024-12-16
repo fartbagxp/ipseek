@@ -1,15 +1,15 @@
-use axum::body::Body;
 use axum::body::to_bytes;
-use axum::Extension;
+use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
+use axum::Extension;
 use axum::Router;
+use ip_ranger::handler::check_ip;
+use ip_ranger::utils::{build_tries, AppState};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceExt; // for `oneshot` method
-use ip_ranger::handler::check_ip;
-use ip_ranger::utils::{AppState, build_tries};
 
 async fn setup_app() -> Router {
     let tries = build_tries().await.unwrap();

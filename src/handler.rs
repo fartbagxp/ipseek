@@ -1,8 +1,8 @@
+use crate::utils::{check_ip_type, lookup_aws_cidr, parse_ip, AppState};
 use axum::{extract::Path, response::Json, Extension};
 use log::debug;
 use serde_json::json;
 use std::sync::Arc;
-use crate::utils::{AppState, parse_ip, check_ip_type, lookup_aws_cidr};
 
 pub async fn check_ip(
     Path(ip_str): Path<String>,
@@ -26,7 +26,7 @@ pub async fn check_ip(
                         "data": ""
                     })
                 }
-            },
+            }
             _ => json!({
                 "error": "Unknown IP type",
                 "data": ""
