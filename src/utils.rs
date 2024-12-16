@@ -3,7 +3,7 @@ use iptrie::{Ipv4Prefix, Ipv4RTrieSet, Ipv6Prefix, Ipv6RTrieSet};
 use reqwest::Error;
 use serde_json::json;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -82,16 +82,6 @@ pub async fn lookup_aws_cidr(
             })
         }),
     }
-}
-
-pub async fn find_matching_cidr_for_ip(trie: &Ipv4RTrieSet, ip: Ipv4Addr) -> Result<(), Error> {
-    let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
-    if let Some(matching_cidr) = find_matching_cidr_ipv4(trie, ip, &aws_cidr_ranges) {
-        println!("Matching CIDR: {:#?}", matching_cidr);
-    } else {
-        println!("No matching CIDR found for IP: {}", ip);
-    }
-    Ok(())
 }
 
 pub async fn build_tries(
