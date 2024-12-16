@@ -18,8 +18,13 @@ pub async fn check_ip(
             }),
             "Public IP" => {
                 let tries = state.tries.read().await;
-                if let Some(trie) = tries.get("aws") {
-                    lookup_aws_cidr(ip, trie).await
+                let tries_v6 = state.tries_v6.read().await;
+
+                let trie = tries.get("aws");
+                let trie_v6 = tries_v6.get("aws");
+
+                if let (Some(trie), Some(trie_v6)) = (trie, trie_v6) {
+                    lookup_aws_cidr(ip, trie, trie_v6).await
                 } else {
                     json!({
                         "error": "Trie not found",
