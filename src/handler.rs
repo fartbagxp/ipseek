@@ -2,8 +2,6 @@ use axum::{extract::Path, response::Json, Extension};
 use log::debug;
 use serde_json::json;
 use std::sync::Arc;
-use std::net::IpAddr;
-use tokio::sync::RwLock;
 use crate::utils::{AppState, parse_ip, check_ip_type, lookup_aws_cidr};
 
 pub async fn check_ip(
