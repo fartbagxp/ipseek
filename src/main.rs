@@ -1,12 +1,10 @@
 mod aws;
 
-use aws::{fetch_aws_cidr_ranges, find_matching_cidr, V4CidrBlock};
+use aws::{fetch_aws_cidr_ranges, find_matching_cidr};
 use axum::{routing::get, Router, extract::Path, response::Json, Extension};
 use log::debug;
-use ipnet::IpNet;
 use reqwest::Error;
 use serde_json::json;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
