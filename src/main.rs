@@ -1,15 +1,8 @@
-use ip_ranger::aws::{fetch_aws_cidr_ranges, find_matching_cidr};
-use axum::{routing::get, Router, extract::Path, response::Json, Extension};
+use axum::{routing::get, Router, Extension};
 use ip_ranger::handler::check_ip;
-use log::debug;
 use reqwest::Error;
-use serde_json::json;
-use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use iptrie::Ipv4Prefix;
-use iptrie::Ipv4RTrieSet;
 use ip_ranger::utils::{AppState, build_tries};
 
 #[tokio::main]
