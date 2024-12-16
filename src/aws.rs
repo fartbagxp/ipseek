@@ -4,11 +4,12 @@ use serde::Deserialize;
 use iptrie::Ipv4RTrieSet;
 use std::net::Ipv4Addr;
 
-// #[allow(non_camel_case_types)]
 #[derive(Debug, Deserialize)]
 pub struct AwsCidrRanges {
-    pub syncToken: String,
-    pub createDate: String,
+    #[serde(rename = "syncToken")]
+    pub sync_token: String,
+    #[serde(rename = "createDate")]
+    pub create_date: String,
     pub prefixes: Vec<V4CidrBlock>,
     pub ipv6_prefixes: Vec<V6CidrBlock>,
 }
