@@ -9,9 +9,10 @@ use tokio::sync::RwLock;
 async fn main() -> Result<(), Error> {
     env_logger::init();
 
-    let tries = build_tries().await?;
+    let (tries, tries_v6) = build_tries().await?;
     let state = Arc::new(AppState {
         tries: Arc::new(RwLock::new(tries)),
+        tries_v6: Arc::new(RwLock::new(tries_v6)),
     });
 
     // Start the server
