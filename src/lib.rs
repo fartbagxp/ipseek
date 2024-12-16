@@ -1,4 +1,3 @@
 pub mod aws;
-pub mod utils;
 pub mod handler;
-
+pub mod utils;

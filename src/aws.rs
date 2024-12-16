@@ -1,7 +1,7 @@
-use reqwest::Error;
-use serde::Serialize;
-use serde::Deserialize;
 use iptrie::Ipv4RTrieSet;
+use reqwest::Error;
+use serde::Deserialize;
+use serde::Serialize;
 use std::net::Ipv4Addr;
 
 #[derive(Debug, Deserialize)]
@@ -42,13 +42,21 @@ pub struct AwsIpResult {
 }
 
 pub async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Error> {
-    let url = "https://raw.githubusercontent.com/fartbagxp/aas-cidr-ranges/master/data/raw/aws.json";
+    let url =
+        "https://raw.githubusercontent.com/fartbagxp/aas-cidr-ranges/master/data/raw/aws.json";
     let response = reqwest::get(url).await?;
     let aws_cidr_ranges: AwsCidrRanges = response.json().await?;
     Ok(aws_cidr_ranges)
 }
 
-pub fn find_matching_cidr<'a>(trie: &Ipv4RTrieSet, ip: Ipv4Addr, aws_cidr_ranges: &'a AwsCidrRanges) -> Option<&'a V4CidrBlock> {
+pub fn find_matching_cidr<'a>(
+    trie: &Ipv4RTrieSet,
+    ip: Ipv4Addr,
+    aws_cidr_ranges: &'a AwsCidrRanges,
+) -> Option<&'a V4CidrBlock> {
     let prefix = trie.lookup(&ip);
-    aws_cidr_ranges.prefixes.iter().find(|block| block.ip_prefix == prefix.to_string())
+    aws_cidr_ranges
+        .prefixes
+        .iter()
+        .find(|block| block.ip_prefix == prefix.to_string())
 }
