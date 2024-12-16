@@ -12,9 +12,10 @@ use tokio::sync::RwLock;
 use tower::ServiceExt; // for `oneshot` method
 
 async fn setup_app() -> Router {
-    let tries = build_tries().await.unwrap();
+    let (tries, tries_v6) = build_tries().await.unwrap();
     let state = Arc::new(AppState {
         tries: Arc::new(RwLock::new(tries)),
+        tries_v6: Arc::new(RwLock::new(tries_v6)),
     });
 
     Router::new()
