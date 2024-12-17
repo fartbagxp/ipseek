@@ -2,7 +2,6 @@ use iptrie::Ipv4RTrieSet;
 use iptrie::Ipv6RTrieSet;
 use reqwest::Error;
 use serde::Deserialize;
-use serde::Serialize;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 
