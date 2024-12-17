@@ -52,7 +52,7 @@ async fn test_private_ip() {
 }
 
 #[tokio::test]
-async fn test_public_ip() {
+async fn test_aws_public_ip() {
     let app = setup_app().await;
 
     let response = app
@@ -72,4 +72,49 @@ async fn test_public_ip() {
 
     assert!(json.get("error").unwrap().is_string());
     assert!(json.get("data").unwrap().is_object());
+    assert_eq!(
+      json,
+      json!({
+        "error": "",
+        "data": {
+          "ip": "51.0.28.5",
+          "network_border_group": "eusc-de-east-1",
+          "region": "eusc-de-east-1",
+          "service": "AMAZON"
+        }
+      })
+  );
+}
+
+#[tokio::test]
+async fn test_aws_ipv6_public_ip() {
+    let app = setup_app().await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/2600:f0f0:551f:0000:0000:0000:0000:0001")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(
+        json,
+        json!({
+            "data": {
+                "ip": "2600:f0f0:551f::1",
+                "network_border_group": "us-east-2",
+                "region": "us-east-2",
+                "service": "AMAZON"
+            },
+            "error": ""
+        })
+    );
 }
