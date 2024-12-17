@@ -16,5 +16,5 @@ RUN cargo build --release --bin ip_ranger
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
-COPY --from=builder /app/target/release/ip-ranger /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/ip-ranger"]
+COPY --from=builder /app/target/release/ip_ranger /usr/local/bin
+ENTRYPOINT ["/usr/local/bin/ip_ranger"]
