@@ -32,17 +32,6 @@ pub struct V6CidrBlock {
     pub network_border_group: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct AwsIpResult {
-    pub ip_address: String,
-    pub sync_token: String,
-    pub create_date: String,
-    pub ip_prefix: String,
-    pub region: String,
-    pub service: String,
-    pub network_border_group: String,
-}
-
 pub async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Error> {
     let url =
         "https://raw.githubusercontent.com/fartbagxp/aas-cidr-ranges/master/data/raw/aws.json";

@@ -50,7 +50,10 @@ pub async fn lookup_aws_cidr(
                 json!({
                     "error": "",
                     "data": {
-                        "ip": ip.to_string(),
+                        "ip_address": ip.to_string(),
+                        "ip_prefix": matching_cidr.ip_prefix,
+                        "sync_token": aws_cidr_ranges.sync_token,
+                        "create_date": aws_cidr_ranges.create_date,
                         "region": matching_cidr.region,
                         "service": matching_cidr.service,
                         "network_border_group": matching_cidr.network_border_group,
@@ -69,7 +72,10 @@ pub async fn lookup_aws_cidr(
             json!({
                 "error": "",
                 "data": {
-                    "ip": ip.to_string(),
+                    "ip_address": ip.to_string(),
+                    "ip_prefix": matching_cidr.ipv6_prefix,
+                    "sync_token": aws_cidr_ranges.sync_token,
+                    "create_date": aws_cidr_ranges.create_date,
                     "region": matching_cidr.region,
                     "service": matching_cidr.service,
                     "network_border_group": matching_cidr.network_border_group,
