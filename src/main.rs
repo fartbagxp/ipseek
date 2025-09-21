@@ -3,23 +3,13 @@ use log::debug;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use iptrie::Ipv4Prefix;
 use iptrie::Ipv4RTrieSet;
 use clap::{Parser, Subcommand};
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 use anyhow::{bail, Context, Result};
-use serde_json::Value;
 use tempfile;
-use flate2::{Compression, write::GzEncoder, read::GzDecoder};
 use bincode;
-
-mod parser;
-use crate::parser::aws::{CidrBlock, AwsCidrRanges};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct StoredEntry {
@@ -66,14 +56,6 @@ pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     };
 
     Json(response)
-}
-
-// Function to fetch AWS CIDR ranges
-async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Box<dyn std::error::Error>> {
-    let url = "https://raw.githubusercontent.com/fartbagxp/aas-cidr-ranges/master/data/raw/aws.json";
-    let response = reqwest::get(url).await?.text().await?;
-    let aws_cidr_ranges: AwsCidrRanges = serde_json::from_str(&response)?;
-    Ok(aws_cidr_ranges)
 }
 
 async fn run_update(db_path: &str) -> Result<()> {
