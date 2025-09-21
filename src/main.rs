@@ -1,31 +1,36 @@
 use axum::{routing::get, Router, extract::Path, response::Json};
 use log::debug;
 use ipnet::IpNet;
-use reqwest::Error;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use iptrie::Ipv4Prefix;
 use iptrie::Ipv4RTrieSet;
+use clap::{Parser, Subcommand};
 
-mod aws;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
-use crate::aws::{CidrBlock, AwsCidrRanges};
+use anyhow::{bail, Context, Result};
+use serde_json::Value;
+use tempfile;
+use flate2::{Compression, write::GzEncoder, read::GzDecoder};
+use bincode;
 
-#[derive(Debug, Deserialize)]
-pub struct CidrBlock {
-    ip_prefix: String,
-    region: String,
-    service: String,
-    network_border_group: String,
+mod parser;
+use crate::parser::aws::{CidrBlock, AwsCidrRanges};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct StoredEntry {
+    prefix: String,
+    provider: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct AwsCidrRanges {
-    sync_token: String,
-    create_date: String,
-    prefixes: Vec<CidrBlock>,
+#[derive(Debug, Serialize, Deserialize)]
+struct DbFile {
+    entries: Vec<StoredEntry>,
+    source_commit: Option<String>,
 }
 
 fn is_private_ip(ip: &IpAddr) -> bool {
@@ -39,34 +44,6 @@ fn is_private_ip(ip: &IpAddr) -> bool {
     }
 }
 
-// async fn check_ip(
-//     Path(ip_str): Path<String>,
-//     state: Arc<AppState>,
-// ) -> Json<serde_json::Value> {
-//     debug!("Requested IP: {}", ip_str);
-
-//     let response = if let Ok(ip) = ip_str.parse::<IpAddr>() {
-//         let trie = state.ip_trie.read().await;
-//         if let Some(region) = trie.longest_match(ip) {
-//             serde_json::json!({
-//                 "error": "",
-//                 "data": format!("IP belongs to AWS range in region: {}", region)
-//             })
-//         } else {
-//             serde_json::json!({
-//                 "error": "",
-//                 "data": "IP does not belong to any AWS range"
-//             })
-//         }
-//     } else {
-//         serde_json::json!({
-//             "error": "Invalid IP address",
-//             "data": ""
-//         })
-//     };
-
-//     Json(response)
-// }
 pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     debug!("Requested IP: {}", ip_str);
     let response = if let Ok(ip) = ip_str.parse::<IpAddr>() {
@@ -99,34 +76,191 @@ async fn fetch_aws_cidr_ranges() -> Result<AwsCidrRanges, Box<dyn std::error::Er
     Ok(aws_cidr_ranges)
 }
 
-// async fn populate_ip_trie() -> Result<IpTrie<IpAddr, String>, Box<dyn std::error::Error>> {
-//     let aws_cidr_ranges = fetch_aws_cidr_ranges().await?;
-//     let mut trie = IpTrie::new();
+async fn run_update(db_path: &str) -> Result<()> {
+    log::info!("Fetching dataset file list from GitHub API...");
+    let client = reqwest::Client::new();
+    let api_url = "https://api.github.com/repos/fartbagxp/aas-cidr-ranges/contents/data/raw";
+    let mut req = client.get(api_url)
+        .header("User-Agent", "ip-ranger/1.0");
 
-//     for cidr in aws_cidr_ranges.prefixes {
-//         // Parse the IP prefix and insert it into the trie
-//         if let Ok(ip_network) = cidr.ip_prefix.parse::<ipnet::IpNet>() {
-//             trie.insert(ip_network.addr(), cidr.region.clone());
-//         }
-//     }
+    // optional token to avoid strict rate limits
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        req = req.bearer_auth(token);
+    }
 
-//     Ok(trie)
-// }
+    let list_resp = req.send().await.context("listing files from GitHub API")?;
+    if !list_resp.status().is_success() {
+        bail!("GitHub API list failed: {}", list_resp.status());
+    }
 
-// async fn check_ip_in_aws_ranges(
-//     ip: &IpAddr,
-//     trie: &IpTrie<IpAddr, String>,
-// ) -> Option<String> {
-//     trie.longest_match(*ip).map(|(_, region)| region.clone())
-// }
+    #[derive(serde::Deserialize)]
+    struct GhEntry {
+        name: String,
+        download_url: Option<String>,
+        #[serde(rename = "type")]
+        kind: String,
+    }
 
-// pub struct AppState {
-//     ip_trie: Arc<RwLock<IpTrie<IpAddr, String>>>,
-// }
+    let entries: Vec<GhEntry> = list_resp.json().await.context("parsing GitHub list JSON")?;
+
+    let mut stored_entries: Vec<StoredEntry> = Vec::new();
+
+    for e in entries.into_iter().filter(|e| e.kind == "file" && e.name.ends_with(".json")) {
+        if let Some(url) = e.download_url {
+            log::info!("Fetching {}", url);
+            let text = client.get(&url)
+                .header("User-Agent", "ip-ranger/1.0")
+                .send()
+                .await
+                .with_context(|| format!("fetching {}", url))?
+                .text()
+                .await
+                .with_context(|| format!("reading {}", url))?;
+
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                let provider = e.name.trim_end_matches(".json").to_string();
+
+                if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
+                    for obj in arr {
+                        if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
+                            stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        } else if let Some(pref) = obj.get("ipv4_prefix").and_then(|v| v.as_str()) {
+                            stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        }
+                    }
+                }
+
+                if let Some(arr6) = val.get("ipv6_prefixes").and_then(|v| v.as_array()) {
+                    for obj in arr6 {
+                        if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
+                            stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        }
+                    }
+                }
+
+                if let Some(arr) = val.as_array() {
+                    for obj in arr {
+                        if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
+                            stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        }
+                        if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
+                            stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        }
+                    }
+                }
+            } else {
+                log::warn!("failed to parse json from {}", url);
+            }
+        }
+    }
+
+    // dedupe and persist (same as previous logic)
+    let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::with_capacity(stored_entries.len());
+    for e in stored_entries {
+        map.entry(e.prefix).or_insert(e.provider);
+    }
+
+    let deduped: Vec<StoredEntry> = map.into_iter().map(|(p, prov)| StoredEntry { prefix: p, provider: prov }).collect();
+
+    let db = DbFile {
+        entries: deduped,
+        source_commit: None,
+    };
+
+    // serialize + gzip
+    let tmpdir = tempfile::tempdir().context("create tmpdir")?;
+    let tmp_out = tmpdir.path().join("db.bin.gz");
+    let f = std::fs::File::create(&tmp_out)?;
+    let mut enc = flate2::write::GzEncoder::new(f, flate2::Compression::default());
+    let bytes = bincode::serde::encode_to_vec(&db, bincode::config::standard())?;
+    use std::io::Write;
+    enc.write_all(&bytes)?;
+    enc.finish()?;
+
+    let db_path = std::path::PathBuf::from(db_path);
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::rename(&tmp_out, &db_path) {
+        Ok(_) => {}
+        Err(e) => {
+            log::warn!("rename failed, falling back to copy: {}", e);
+            std::fs::copy(&tmp_out, &db_path).context("copying db file fallback")?;
+        }
+    }
+
+    println!("DB written to {}", db_path.to_string_lossy());
+    Ok(())
+}
+
+fn load_db(db_path: &str) -> Result<DbFile> {
+    let mut f = std::fs::File::open(db_path).with_context(|| format!("open db {}", db_path))?;
+    let mut buf = Vec::new();
+    use std::io::Read;
+    f.read_to_end(&mut buf)?;
+    // support gzipped bincode
+    let mut maybe = flate2::read::GzDecoder::new(&buf[..]);
+    let mut decompressed = Vec::new();
+    if let Ok(_) = maybe.read_to_end(&mut decompressed) {
+        if let Ok((val, _)) = bincode::serde::decode_from_slice::<DbFile, _>(&decompressed, bincode::config::standard()) {
+            return Ok(val);
+        }
+    }
+    // fallback: try decoding raw slice with bincode v2 serde
+    let (val, _) = bincode::serde::decode_from_slice::<DbFile, _>(&buf, bincode::config::standard()).context("deserialize plain bincode")?;
+    Ok(val)
+}
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
+    // CLI
+    #[derive(Parser)]
+    #[command(author, version, about, long_about = None)]
+    struct Cli {
+        /// Path to local DB file
+        #[arg(long, default_value = "./db.bin")]
+        db: String,
+        #[command(subcommand)]
+        command: Commands,
+    }
+
+    #[derive(Subcommand)]
+    enum Commands {
+        /// Fetch datasets and rebuild local DB
+        Update,
+        /// Check a single IP address against the local DB
+        Check { ip: String },
+        /// Run HTTP server
+        Serve,
+    }
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Update => {
+            println!("Running run_update -> {}", cli.db);
+            if let Err(e) = run_update(&cli.db).await {
+                eprintln!("run_update failed: {:#?}", e);
+                std::process::exit(1);
+            }
+            println!("run_update completed. DB written to {}", cli.db);
+            return;
+        }
+        Commands::Check { ip } => {
+            match lookup_provider(&cli.db, &ip) {
+                Ok(p) => println!("{} -> {}", ip, p),
+                Err(e) => {
+                    eprintln!("lookup failed: {:#?}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Commands::Serve => {
+            // fallthrough to start server
+        }
+    }
 
     let prefixes = [
         "1.1.0.0/24",
@@ -162,8 +296,52 @@ async fn main() {
     // Start the server
     let app = Router::new()
         .route("/", get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }))
-        .route("/:ip", get(check_ip));
+        .route("/{ip}", get(check_ip));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+/// Synchronous lookup helper used by CLI `check` command.
+fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
+    let db = load_db(db_path)?;
+    let ip: IpAddr = ip_str.parse().context("parse ip")?;
+
+    // build IPv4 trie
+    let mut prefix_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut v4_prefixes = Vec::new();
+    let mut v6_list: Vec<(IpNet, String)> = Vec::new();
+
+    for e in db.entries.into_iter() {
+        if let Ok(net) = e.prefix.parse::<IpNet>() {
+            match net {
+                IpNet::V4(v4) => {
+                    // prefer parsing the textual prefix, fallback to constructing from addr/prefix_len
+                    let p = v4.to_string().parse::<Ipv4Prefix>().unwrap_or_else(|_| Ipv4Prefix::new(u32::from(v4.addr()).into(), v4.prefix_len()).unwrap());
+                    v4_prefixes.push(p);
+                    prefix_map.insert(p.to_string(), e.provider);
+                }
+                IpNet::V6(v6) => {
+                    v6_list.push((IpNet::V6(v6), e.provider));
+                }
+            }
+        }
+    }
+
+    if let IpAddr::V4(a) = ip {
+        let trie = Ipv4RTrieSet::from_iter(v4_prefixes.into_iter());
+        let found = trie.lookup(&a);
+        if let Some(provider) = prefix_map.get(&found.to_string()) {
+            return Ok(provider.clone());
+        }
+        return Ok("unknown".to_string());
+    } else {
+        // IPv6 linear search
+        for (net, prov) in v6_list {
+            if net.contains(&ip) {
+                return Ok(prov);
+            }
+        }
+        Ok("unknown".to_string())
+    }
 }
