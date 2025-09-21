@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::net::IpAddr;
-use crate::db::{DbFile, StoredFile};
+use crate::db::DbFile;
 use ipnet::IpNet;
 
 fn canonical_provider(name: &str) -> String {
