@@ -17,10 +17,19 @@ struct StoredEntry {
     provider: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct StoredFile {
+    name: String,
+    content: String,
+    prefixes: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct DbFile {
     entries: Vec<StoredEntry>,
     source_commit: Option<String>,
+    /// Raw downloaded files (filename -> content)
+    files: Vec<StoredFile>,
 }
 
 fn is_private_ip(ip: &IpAddr) -> bool {
@@ -86,8 +95,9 @@ async fn run_update(db_path: &str) -> Result<()> {
     let entries: Vec<GhEntry> = list_resp.json().await.context("parsing GitHub list JSON")?;
 
     let mut stored_entries: Vec<StoredEntry> = Vec::new();
+    let mut stored_files: Vec<StoredFile> = Vec::new();
 
-    for e in entries.into_iter().filter(|e| e.kind == "file" && e.name.ends_with(".json")) {
+    for e in entries.into_iter().filter(|e| e.kind == "file" && (e.name.ends_with(".json") || e.name.ends_with(".txt"))) {
         if let Some(url) = e.download_url {
             log::info!("Fetching {}", url);
             let text = client.get(&url)
@@ -99,15 +109,25 @@ async fn run_update(db_path: &str) -> Result<()> {
                 .await
                 .with_context(|| format!("reading {}", url))?;
 
+            // Parse file and collect prefixes for this file (support JSON or simple TXT lists)
+            let name = e.name.clone();
+            // Print the filename immediately so `cargo run -- update` shows progress in plain output
+            println!("downloaded: {}", name);
+
+            let mut this_file_prefixes: Vec<String> = Vec::new();
+
+            // First try JSON parsing (expected for many provider files)
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                let provider = e.name.trim_end_matches(".json").to_string();
+                let provider = name.trim_end_matches(".json").trim_end_matches(".txt").to_string();
 
                 if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
                     for obj in arr {
                         if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
                             stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                            this_file_prefixes.push(pref.to_string());
                         } else if let Some(pref) = obj.get("ipv4_prefix").and_then(|v| v.as_str()) {
                             stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                            this_file_prefixes.push(pref.to_string());
                         }
                     }
                 }
@@ -116,25 +136,40 @@ async fn run_update(db_path: &str) -> Result<()> {
                     for obj in arr6 {
                         if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
                             stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                            this_file_prefixes.push(pref.to_string());
                         }
                     }
                 }
 
                 if let Some(arr) = val.as_array() {
+                    // Some files are plain arrays of prefix objects
                     for obj in arr {
                         if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
                             stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                            this_file_prefixes.push(pref.to_string());
                         }
                         if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
                             stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                            this_file_prefixes.push(pref.to_string());
                         }
                     }
                 }
             } else {
-                log::warn!("failed to parse json from {}", url);
+                // Fallback: treat the file as a single-column list of CIDRs (TXT)
+                let provider = name.trim_end_matches(".json").trim_end_matches(".txt").to_string();
+                for line in text.lines() {
+                    let l = line.trim();
+                    if l.is_empty() { continue; }
+                    stored_entries.push(StoredEntry { prefix: l.to_string(), provider: provider.clone() });
+                    this_file_prefixes.push(l.to_string());
+                }
             }
+
+            stored_files.push(StoredFile { name: name.clone(), content: text.clone(), prefixes: this_file_prefixes });
         }
     }
+
+    // No special-case fetching; repository files may include .txt lists (e.g. cloudflare) which we now parse
 
     // dedupe and persist (same as previous logic)
     let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::with_capacity(stored_entries.len());
@@ -144,9 +179,14 @@ async fn run_update(db_path: &str) -> Result<()> {
 
     let deduped: Vec<StoredEntry> = map.into_iter().map(|(p, prov)| StoredEntry { prefix: p, provider: prov }).collect();
 
+    // Report which files will be stored in the DB for visibility
+    let file_names: Vec<String> = stored_files.iter().map(|f| f.name.clone()).collect();
+    println!("storing {} files into DB: {:?}", file_names.len(), file_names);
+
     let db = DbFile {
         entries: deduped,
         source_commit: None,
+        files: stored_files,
     };
 
     // serialize + gzip
@@ -191,6 +231,75 @@ fn load_db(db_path: &str) -> Result<DbFile> {
     // fallback: try decoding raw slice with bincode v2 serde
     let (val, _) = bincode::serde::decode_from_slice::<DbFile, _>(&buf, bincode::config::standard()).context("deserialize plain bincode")?;
     Ok(val)
+}
+
+/// Synchronous lookup helper used by CLI `check` command.
+fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
+    let db = load_db(db_path)?;
+    let ip: IpAddr = ip_str.parse().context("parse ip")?;
+
+    // Build plain IpNet lists for robust longest-prefix matching
+    let mut v4_list: Vec<(ipnet::Ipv4Net, String)> = Vec::new();
+    let mut v6_list: Vec<(IpNet, String)> = Vec::new();
+
+    for e in db.entries.into_iter() {
+        if let Ok(net) = e.prefix.parse::<IpNet>() {
+            match net {
+                IpNet::V4(v4) => v4_list.push((v4, e.provider)),
+                IpNet::V6(v6) => v6_list.push((IpNet::V6(v6), e.provider)),
+            }
+        }
+    }
+
+    if let IpAddr::V4(a) = ip {
+        // Longest-prefix match among v4_list. When multiple providers exist for the same prefix,
+        // prefer a provider derived from the filename if that file contains the prefix text.
+        let mut best_len: i32 = -1;
+        let mut best_provider: Option<String> = None;
+        for (net, prov) in &v4_list {
+            if net.contains(&a) {
+                let len = net.prefix_len() as i32;
+                if len > best_len {
+                    // prefer provider coming from file contents if present
+                    let s = net.to_string();
+                    let mut candidate = prov.clone();
+                    for f in &db.files {
+                        if f.content.contains(&s) {
+                            candidate = f.name.trim_end_matches(".json").to_string();
+                            break;
+                        }
+                    }
+                    best_len = len;
+                    best_provider = Some(candidate);
+                }
+            }
+        }
+        if let Some(p) = best_provider {
+            return Ok(p);
+        }
+
+        // Fallback: scan per-file prefix sets and prefer the filename-derived provider
+        for f in db.files.into_iter() {
+            for pref in &f.prefixes {
+                if let Ok(net) = pref.parse::<ipnet::Ipv4Net>() {
+                    if net.contains(&a) {
+                        let prov = f.name.trim_end_matches(".json").to_string();
+                        return Ok(prov);
+                    }
+                }
+            }
+        }
+
+        return Ok("unknown".to_string());
+    } else {
+        // IPv6 linear search
+        for (net, prov) in v6_list {
+            if net.contains(&ip) {
+                return Ok(prov);
+            }
+        }
+        Ok("unknown".to_string())
+    }
 }
 
 #[tokio::main]
@@ -282,48 +391,4 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();
-}
-
-/// Synchronous lookup helper used by CLI `check` command.
-fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
-    let db = load_db(db_path)?;
-    let ip: IpAddr = ip_str.parse().context("parse ip")?;
-
-    // build IPv4 trie
-    let mut prefix_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let mut v4_prefixes = Vec::new();
-    let mut v6_list: Vec<(IpNet, String)> = Vec::new();
-
-    for e in db.entries.into_iter() {
-        if let Ok(net) = e.prefix.parse::<IpNet>() {
-            match net {
-                IpNet::V4(v4) => {
-                    // prefer parsing the textual prefix, fallback to constructing from addr/prefix_len
-                    let p = v4.to_string().parse::<Ipv4Prefix>().unwrap_or_else(|_| Ipv4Prefix::new(u32::from(v4.addr()).into(), v4.prefix_len()).unwrap());
-                    v4_prefixes.push(p);
-                    prefix_map.insert(p.to_string(), e.provider);
-                }
-                IpNet::V6(v6) => {
-                    v6_list.push((IpNet::V6(v6), e.provider));
-                }
-            }
-        }
-    }
-
-    if let IpAddr::V4(a) = ip {
-        let trie = Ipv4RTrieSet::from_iter(v4_prefixes.into_iter());
-        let found = trie.lookup(&a);
-        if let Some(provider) = prefix_map.get(&found.to_string()) {
-            return Ok(provider.clone());
-        }
-        return Ok("unknown".to_string());
-    } else {
-        // IPv6 linear search
-        for (net, prov) in v6_list {
-            if net.contains(&ip) {
-                return Ok(prov);
-            }
-        }
-        Ok("unknown".to_string())
-    }
 }
