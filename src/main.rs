@@ -1,10 +1,9 @@
-use axum::{routing::get, Router, extract::Path, response::Json};
+use axum::{routing::get, Router, extract::Path, response::Json, extract::Extension};
 use log::debug;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
-use iptrie::Ipv4Prefix;
-use iptrie::Ipv4RTrieSet;
+use std::sync::Arc;
 use clap::{Parser, Subcommand};
 
 use anyhow::{bail, Context, Result};
@@ -32,6 +31,38 @@ struct DbFile {
     files: Vec<StoredFile>,
 }
 
+/// Normalize a provider label (usually derived from a filename) to a canonical short name.
+fn canonical_provider(name: &str) -> String {
+    let mut s = name.to_lowercase();
+    // strip common extensions if present
+    if s.ends_with(".json") {
+        s = s.trim_end_matches(".json").to_string();
+    }
+    if s.ends_with(".txt") {
+        s = s.trim_end_matches(".txt").to_string();
+    }
+
+    // split on non-alphanumeric boundaries
+    let mut tokens: Vec<&str> = s.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| !t.is_empty()).collect();
+
+    // stopwords which commonly appear as suffixes in filenames
+    let stopwords = [
+        "ips", "ipv4", "ipv6", "v4", "v6", "ip", "iprange", "ip-range", "range", "ranges",
+        "public", "hosted", "cdn", "api", "webhook", "prefixes", "prefix",
+    ];
+
+    while tokens.len() > 1 {
+        let last = *tokens.last().unwrap();
+        if stopwords.contains(&last) || last.starts_with("ipv") || last.starts_with("ips") {
+            tokens.pop();
+        } else {
+            break;
+        }
+    }
+
+    tokens.join("-")
+}
+
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(ipv4) => ipv4.is_private(),
@@ -43,25 +74,62 @@ fn is_private_ip(ip: &IpAddr) -> bool {
     }
 }
 
-pub async fn check_ip(Path(ip_str): Path<String>) -> Json<serde_json::Value> {
+#[derive(Clone)]
+struct AppState {
+    v4_list: Vec<(ipnet::Ipv4Net, String)>,
+    v6_list: Vec<(IpNet, String)>,
+    files: Vec<StoredFile>,
+}
+
+pub async fn check_ip(Extension(state): Extension<Arc<AppState>>, Path(ip_str): Path<String>) -> Json<serde_json::Value> {
     debug!("Requested IP: {}", ip_str);
-    let response = if let Ok(ip) = ip_str.parse::<IpAddr>() {
-        if is_private_ip(&ip) {
-            serde_json::json!({
-                "error": "",
-                "data": "Private IP"
-            })
-        } else {
-            serde_json::json!({
-                "error": "",
-                "data": "Public IP"
-            })
+    let response = match ip_str.parse::<IpAddr>() {
+        Ok(ip) => {
+            if is_private_ip(&ip) {
+                serde_json::json!({"error":"","data":"Private IP"})
+            } else {
+                // perform lookup using cached state
+                let provider = match ip {
+                    IpAddr::V4(a) => {
+                        // LPM
+                        let mut best_len: i32 = -1;
+                        let mut best_provider: Option<String> = None;
+                        for (net, prov) in &state.v4_list {
+                            if net.contains(&a) {
+                                let len = net.prefix_len() as i32;
+                                if len > best_len {
+                                    // prefer provider coming from file prefixes if present
+                                    let s = net.to_string();
+                                    let mut candidate = prov.clone();
+                                    for f in &state.files {
+                                        if f.prefixes.iter().any(|p| p == &s) {
+                                            candidate = canonical_provider(&f.name);
+                                            break;
+                                        }
+                                    }
+                                    best_len = len;
+                                    best_provider = Some(candidate);
+                                }
+                            }
+                        }
+                        canonical_provider(&best_provider.unwrap_or_else(|| "unknown".to_string()))
+                    }
+                    IpAddr::V6(_) => {
+                        let mut prov = "unknown".to_string();
+                        for (net, p) in &state.v6_list {
+                            if net.contains(&ip) {
+                                prov = p.clone();
+                                break;
+                            }
+                        }
+                        canonical_provider(&prov)
+                    }
+                };
+
+                serde_json::json!({"error":"","data":provider})
+            }
         }
-    } else {
-        serde_json::json!({
-            "error": "Invalid IP address",
-            "data": ""
-        })
+        Err(_) => serde_json::json!({"error":"Invalid IP address","data":""}),
     };
 
     Json(response)
@@ -265,7 +333,7 @@ fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
                     let mut candidate = prov.clone();
                     for f in &db.files {
                         if f.content.contains(&s) {
-                            candidate = f.name.trim_end_matches(".json").to_string();
+                            candidate = canonical_provider(&f.name);
                             break;
                         }
                     }
@@ -275,7 +343,7 @@ fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
             }
         }
         if let Some(p) = best_provider {
-            return Ok(p);
+            return Ok(canonical_provider(&p));
         }
 
         // Fallback: scan per-file prefix sets and prefer the filename-derived provider
@@ -283,7 +351,7 @@ fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
             for pref in &f.prefixes {
                 if let Ok(net) = pref.parse::<ipnet::Ipv4Net>() {
                     if net.contains(&a) {
-                        let prov = f.name.trim_end_matches(".json").to_string();
+                        let prov = canonical_provider(&f.name);
                         return Ok(prov);
                     }
                 }
@@ -295,7 +363,7 @@ fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
         // IPv6 linear search
         for (net, prov) in v6_list {
             if net.contains(&ip) {
-                return Ok(prov);
+                return Ok(canonical_provider(&prov));
             }
         }
         Ok("unknown".to_string())
@@ -303,7 +371,7 @@ fn lookup_provider(db_path: &str, ip_str: &str) -> Result<String> {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     env_logger::init();
     // CLI
     #[derive(Parser)]
@@ -331,64 +399,54 @@ async fn main() {
     match cli.command {
         Commands::Update => {
             println!("Running run_update -> {}", cli.db);
-            if let Err(e) = run_update(&cli.db).await {
-                eprintln!("run_update failed: {:#?}", e);
-                std::process::exit(1);
-            }
+            run_update(&cli.db).await?;
             println!("run_update completed. DB written to {}", cli.db);
-            return;
+            return Ok(());
         }
         Commands::Check { ip } => {
-            match lookup_provider(&cli.db, &ip) {
-                Ok(p) => println!("{} -> {}", ip, p),
-                Err(e) => {
-                    eprintln!("lookup failed: {:#?}", e);
-                    std::process::exit(1);
-                }
-            }
-            return;
+            let p = lookup_provider(&cli.db, &ip)?;
+            println!("{} -> {}", ip, p);
+            return Ok(());
         }
         Commands::Serve => {
-            // fallthrough to start server
+            // Build cached app state from DB and pass into the server
+            let db = match load_db(&cli.db) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("failed to load db {}: {:#?}", cli.db, e);
+                    std::process::exit(1);
+                }
+            };
+
+            let mut v4_list: Vec<(ipnet::Ipv4Net, String)> = Vec::new();
+            let mut v6_list: Vec<(IpNet, String)> = Vec::new();
+            for e in db.entries.iter() {
+                if let Ok(net) = e.prefix.parse::<IpNet>() {
+                    match net {
+                        IpNet::V4(v4) => v4_list.push((v4, e.provider.clone())),
+                        IpNet::V6(v6) => v6_list.push((IpNet::V6(v6), e.provider.clone())),
+                    }
+                }
+            }
+
+            // normalize providers in the cached state for consistent HTTP responses
+            let v4_list = v4_list.into_iter().map(|(n, p)| (n, canonical_provider(&p))).collect();
+            let v6_list = v6_list.into_iter().map(|(n, p)| (n, canonical_provider(&p))).collect();
+
+            let state = Arc::new(AppState { v4_list, v6_list, files: db.files.clone() });
+
+            // start server with state extension
+            let app = Router::new()
+                .route("/", get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }))
+                .route("/{ip}", get(check_ip))
+                .layer(Extension(state));
+
+            let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+            axum::serve(listener, app).await.unwrap();
+            return Ok(());
         }
     }
 
-    let prefixes = [
-        "1.1.0.0/24",
-        "1.1.1.0/24",
-        "1.1.0.0/20",
-        "1.1.2.0/24"
-    ];
-
-    let iter = prefixes.iter().map(|x| x.parse::<Ipv4Prefix>().unwrap());
-
-    // a set based on Patricia trie
-    let trie = Ipv4RTrieSet::from_iter(iter);
-
-    // lpm lookup for Ipv4 address
-    assert_eq!(trie.lookup(&"1.1.1.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.1.0/24");
-    assert_eq!(trie.lookup(&"1.1.2.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.2.0/24");
-
-    // lpm lookup for Ipv4 prefix also works
-    assert_eq!(trie.lookup(&"1.1.0.0/25".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/24");
-    assert_eq!(trie.lookup(&"1.1.0.0/21".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/20");
-
-    // now, compute the set based on LC-trie
-    let lctrie = trie.compress();
-
-    // lpm lookup for Ipv4 address
-    assert_eq!(lctrie.lookup(&"1.1.1.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.1.0/24");
-    assert_eq!(lctrie.lookup(&"1.1.2.2".parse::<Ipv4Addr>().unwrap()).to_string(), "1.1.2.0/24");
-
-    // lpm lookup for Ipv4 prefix also works
-    assert_eq!(lctrie.lookup(&"1.1.0.0/25".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/24");
-    assert_eq!(lctrie.lookup(&"1.1.0.0/21".parse::<Ipv4Prefix>().unwrap()).to_string(), "1.1.0.0/20");
-
-    // Start the server
-    let app = Router::new()
-        .route("/", get(|| async { "Hello to IP ranger! Append your IP to the URL to use this service." }))
-        .route("/{ip}", get(check_ip));
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    // If we reach here without Serve command, fall through (this should be unreachable)
+    Ok(())
 }
