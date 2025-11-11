@@ -19,8 +19,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Fetch datasets and rebuild local DB from the given GitHub contents URL
-    Update { #[arg(long, default_value = "https://api.github.com/repos/fartbagxp/aas-cidr-ranges/contents/data/raw")] url: String },
+    /// Build local DB from data/raw directory
+    UpdateLocal { #[arg(long, default_value = "./data/raw")] path: String },
     /// Check a single IP address against the local DB
     Check { ip: String },
     /// Run HTTP server
@@ -33,18 +33,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Update { url } => {
-            println!("Running update -> {}", cli.db);
-            let db = updater::run_update_from_url(&url).await?;
+        Commands::UpdateLocal { path } => {
+            println!("Running local update from {} -> {}", path, cli.db);
+            let db = updater::run_update_from_local(&path)?;
             save_db(&db, &cli.db)?;
-            println!("run_update completed. DB written to {}", cli.db);
-            return Ok(());
+            println!("local update completed. DB written to {}", cli.db);
         }
         Commands::Check { ip } => {
             let db = db::load_db(&cli.db)?;
             let p = lookup::lookup_provider(db, &ip)?;
             println!("{} -> {}", ip, p);
-            return Ok(());
         }
         Commands::Serve => {
             let db = db::load_db(&cli.db)?;
@@ -59,7 +57,6 @@ async fn main() -> Result<()> {
 
             let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
             axum::serve(listener, app).await.unwrap();
-            return Ok(());
         }
     }
 

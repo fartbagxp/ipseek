@@ -1,10 +1,10 @@
 [package]
 name = "ip-ranger"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8.4"
+axum = "0.8.6"
 env_logger = "0.11.5"
 ipnet = { version = "2.10.1", features = ["serde"] }
 ipnetwork = "0.21.1"
