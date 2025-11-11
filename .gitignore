@@ -94,3 +94,6 @@ $RECYCLE.BIN/
 
 /target
 *.bin
+
+/data
+/data/raw

@@ -1,10 +1,23 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Metadata {
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub fields: HashMap<String, String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StoredEntry {
     pub prefix: String,
     pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub metadata: Metadata,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -27,28 +40,30 @@ pub fn load_db(db_path: &str) -> Result<DbFile> {
     let mut buf = Vec::new();
     use std::io::Read;
     f.read_to_end(&mut buf)?;
-    // support gzipped bincode
-    let mut maybe = flate2::read::GzDecoder::new(&buf[..]);
+
+    // Try gzipped JSON first
+    let mut decoder = flate2::read::GzDecoder::new(&buf[..]);
     let mut decompressed = Vec::new();
-    if let Ok(_) = maybe.read_to_end(&mut decompressed) {
-        if let Ok((val, _)) = bincode::serde::decode_from_slice::<DbFile, _>(&decompressed, bincode::config::standard()) {
+    if decoder.read_to_end(&mut decompressed).is_ok() && !decompressed.is_empty() {
+        if let Ok(val) = serde_json::from_slice::<DbFile>(&decompressed) {
             return Ok(val);
         }
     }
-    // fallback: try decoding raw slice with bincode v2 serde
-    let (val, _) = bincode::serde::decode_from_slice::<DbFile, _>(&buf, bincode::config::standard()).context("deserialize plain bincode")?;
+
+    // Fallback to plain JSON
+    let val = serde_json::from_slice::<DbFile>(&buf).context("deserialize JSON")?;
     Ok(val)
 }
 
 pub fn save_db(db: &DbFile, db_path: &str) -> Result<()> {
-    // serialize + gzip
+    // serialize + gzip as JSON
     let tmpdir = tempfile::tempdir().context("create tmpdir")?;
     let tmp_out = tmpdir.path().join("db.bin.gz");
     let f = std::fs::File::create(&tmp_out)?;
     let mut enc = flate2::write::GzEncoder::new(f, flate2::Compression::default());
-    let bytes = bincode::serde::encode_to_vec(db, bincode::config::standard())?;
+    let json_bytes = serde_json::to_vec(db)?;
     use std::io::Write;
-    enc.write_all(&bytes)?;
+    enc.write_all(&json_bytes)?;
     enc.finish()?;
 
     let db_path = std::path::PathBuf::from(db_path);

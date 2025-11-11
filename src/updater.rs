@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
-use crate::db::{DbFile, StoredEntry, StoredFile};
+use crate::db::{DbFile, StoredEntry, StoredFile, Metadata};
+use std::collections::HashMap;
 
 fn normalize_ip_prefix(prefix: &str) -> String {
     if prefix.contains('/') {
@@ -15,6 +16,16 @@ fn normalize_ip_prefix(prefix: &str) -> String {
         } else {
             prefix.to_string()
         }
+    }
+}
+
+fn create_entry(prefix: String, provider: String, region: Option<String>, service: Option<String>, metadata: HashMap<String, String>) -> StoredEntry {
+    StoredEntry {
+        prefix,
+        provider,
+        region,
+        service,
+        metadata: Metadata { fields: metadata },
     }
 }
 
@@ -61,11 +72,28 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
             if let Some(values) = val.get("values").and_then(|v| v.as_array()) {
                 for value in values {
                     if let Some(props) = value.get("properties") {
+                        let region = props.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let service = props.get("systemService").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                        let mut metadata = HashMap::new();
+                        if let Some(platform) = props.get("platform").and_then(|v| v.as_str()) {
+                            metadata.insert("platform".to_string(), platform.to_string());
+                        }
+                        if let Some(cloud) = val.get("cloud").and_then(|v| v.as_str()) {
+                            metadata.insert("cloud".to_string(), cloud.to_string());
+                        }
+
                         if let Some(addr_prefixes) = props.get("addressPrefixes").and_then(|v| v.as_array()) {
                             for prefix in addr_prefixes {
                                 if let Some(pref_str) = prefix.as_str() {
                                     let normalized = normalize_ip_prefix(pref_str);
-                                    stored_entries.push(StoredEntry { prefix: normalized.clone(), provider: provider.clone() });
+                                    stored_entries.push(create_entry(
+                                        normalized.clone(),
+                                        provider.clone(),
+                                        region.clone(),
+                                        service.clone(),
+                                        metadata.clone()
+                                    ));
                                     this_file_prefixes.push(normalized);
                                 }
                             }
@@ -74,13 +102,28 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
                 }
             }
 
+            // AWS format: { "prefixes": [{ "ip_prefix": "...", "region": "...", "service": "..." }] }
             if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
                 for obj in arr {
-                    if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
-                        this_file_prefixes.push(pref.to_string());
-                    } else if let Some(pref) = obj.get("ipv4_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                    let pref_opt = obj.get("ip_prefix").and_then(|v| v.as_str())
+                        .or_else(|| obj.get("ipv4_prefix").and_then(|v| v.as_str()));
+
+                    if let Some(pref) = pref_opt {
+                        let region = obj.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let service = obj.get("service").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                        let mut metadata = HashMap::new();
+                        if let Some(nbg) = obj.get("network_border_group").and_then(|v| v.as_str()) {
+                            metadata.insert("network_border_group".to_string(), nbg.to_string());
+                        }
+
+                        stored_entries.push(create_entry(
+                            pref.to_string(),
+                            provider.clone(),
+                            region,
+                            service,
+                            metadata
+                        ));
                         this_file_prefixes.push(pref.to_string());
                     }
                 }
@@ -89,20 +132,68 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
             if let Some(arr6) = val.get("ipv6_prefixes").and_then(|v| v.as_array()) {
                 for obj in arr6 {
                     if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        let region = obj.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let service = obj.get("service").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                        let mut metadata = HashMap::new();
+                        if let Some(nbg) = obj.get("network_border_group").and_then(|v| v.as_str()) {
+                            metadata.insert("network_border_group".to_string(), nbg.to_string());
+                        }
+
+                        stored_entries.push(create_entry(
+                            pref.to_string(),
+                            provider.clone(),
+                            region,
+                            service,
+                            metadata
+                        ));
                         this_file_prefixes.push(pref.to_string());
                     }
                 }
             }
 
+            // GitHub format: { "hooks": [...], "web": [...], ... }
+            // Check for service-specific arrays
+            let service_keys = ["hooks", "web", "api", "git", "packages", "pages", "importer", "actions", "dependabot"];
+            for service_key in &service_keys {
+                if let Some(arr) = val.get(service_key).and_then(|v| v.as_array()) {
+                    for item in arr {
+                        if let Some(pref_str) = item.as_str() {
+                            let normalized = normalize_ip_prefix(pref_str);
+                            stored_entries.push(create_entry(
+                                normalized.clone(),
+                                provider.clone(),
+                                None,
+                                Some(service_key.to_string()),
+                                HashMap::new()
+                            ));
+                            this_file_prefixes.push(normalized);
+                        }
+                    }
+                }
+            }
+
+            // Fallback: Generic array of objects with ip_prefix/ipv6_prefix
             if let Some(arr) = val.as_array() {
                 for obj in arr {
                     if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        stored_entries.push(create_entry(
+                            pref.to_string(),
+                            provider.clone(),
+                            None,
+                            None,
+                            HashMap::new()
+                        ));
                         this_file_prefixes.push(pref.to_string());
                     }
                     if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(StoredEntry { prefix: pref.to_string(), provider: provider.clone() });
+                        stored_entries.push(create_entry(
+                            pref.to_string(),
+                            provider.clone(),
+                            None,
+                            None,
+                            HashMap::new()
+                        ));
                         this_file_prefixes.push(pref.to_string());
                     }
                 }
@@ -115,7 +206,13 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
                 if l.is_empty() { continue; }
 
                 let prefix = normalize_ip_prefix(l);
-                stored_entries.push(StoredEntry { prefix: prefix.clone(), provider: provider.clone() });
+                stored_entries.push(create_entry(
+                    prefix.clone(),
+                    provider.clone(),
+                    None,
+                    None,
+                    HashMap::new()
+                ));
                 this_file_prefixes.push(prefix);
             }
         }
@@ -123,13 +220,13 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
         stored_files.push(StoredFile { name: name.clone(), content: text.clone(), prefixes: this_file_prefixes });
     }
 
-    // dedupe
-    let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::with_capacity(stored_entries.len());
+    // dedupe - keep the first occurrence with most complete metadata
+    let mut map: std::collections::HashMap<String, StoredEntry> = std::collections::HashMap::with_capacity(stored_entries.len());
     for e in stored_entries {
-        map.entry(e.prefix).or_insert(e.provider);
+        map.entry(e.prefix.clone()).or_insert(e);
     }
 
-    let deduped: Vec<StoredEntry> = map.into_iter().map(|(p, prov)| StoredEntry { prefix: p, provider: prov }).collect();
+    let deduped: Vec<StoredEntry> = map.into_values().collect();
 
     println!("Processed {} files, {} unique prefixes", stored_files.len(), deduped.len());
 

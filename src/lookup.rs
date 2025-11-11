@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::net::IpAddr;
-use crate::db::DbFile;
+use crate::db::{DbFile, StoredEntry};
 use ipnet::IpNet;
 
 fn canonical_provider(name: &str) -> String {
@@ -19,14 +19,14 @@ fn canonical_provider(name: &str) -> String {
 pub fn lookup_provider(db: DbFile, ip_str: &str) -> Result<String> {
     let ip: IpAddr = ip_str.parse()?;
 
-    let mut v4_list: Vec<(ipnet::Ipv4Net, String)> = Vec::new();
-    let mut v6_list: Vec<(IpNet, String)> = Vec::new();
+    let mut v4_list: Vec<(ipnet::Ipv4Net, StoredEntry)> = Vec::new();
+    let mut v6_list: Vec<(IpNet, StoredEntry)> = Vec::new();
 
     for e in db.entries.into_iter() {
         if let Ok(net) = e.prefix.parse::<IpNet>() {
             match net {
-                IpNet::V4(v4) => v4_list.push((v4, e.provider)),
-                IpNet::V6(v6) => v6_list.push((IpNet::V6(v6), e.provider)),
+                IpNet::V4(v4) => v4_list.push((v4, e.clone())),
+                IpNet::V6(v6) => v6_list.push((IpNet::V6(v6), e.clone())),
             }
         }
     }
@@ -34,41 +34,51 @@ pub fn lookup_provider(db: DbFile, ip_str: &str) -> Result<String> {
     if let IpAddr::V4(a) = ip {
         // LPM
         let mut best_len: i32 = -1;
-        let mut best_provider: Option<String> = None;
-        for (net, prov) in &v4_list {
+        let mut best_entry: Option<&StoredEntry> = None;
+        for (net, entry) in &v4_list {
             if net.contains(&a) {
                 let len = net.prefix_len() as i32;
                 if len > best_len {
-                    let s = net.to_string();
-                    let mut candidate = prov.clone();
-                    for f in &db.files {
-                        if f.content.contains(&s) {
-                            candidate = canonical_provider(&f.name);
-                            break;
-                        }
-                    }
                     best_len = len;
-                    best_provider = Some(candidate);
+                    best_entry = Some(entry);
                 }
             }
         }
-        if let Some(p) = best_provider { return Ok(canonical_provider(&p)); }
-
-        for f in db.files.into_iter() {
-            for pref in &f.prefixes {
-                if let Ok(net) = pref.parse::<ipnet::Ipv4Net>() {
-                    if net.contains(&a) {
-                        return Ok(canonical_provider(&f.name));
-                    }
+        if let Some(entry) = best_entry {
+            let provider = canonical_provider(&entry.provider);
+            let mut parts = vec![provider];
+            if let Some(ref region) = entry.region {
+                if !region.is_empty() {
+                    parts.push(format!("region={}", region));
                 }
             }
+            if let Some(ref service) = entry.service {
+                if !service.is_empty() {
+                    parts.push(format!("service={}", service));
+                }
+            }
+            return Ok(parts.join(" "));
         }
 
         return Ok("unknown".to_string());
     }
 
-    for (net, prov) in v6_list {
-        if net.contains(&ip) { return Ok(canonical_provider(&prov)); }
+    for (net, entry) in v6_list {
+        if net.contains(&ip) {
+            let provider = canonical_provider(&entry.provider);
+            let mut parts = vec![provider];
+            if let Some(ref region) = entry.region {
+                if !region.is_empty() {
+                    parts.push(format!("region={}", region));
+                }
+            }
+            if let Some(ref service) = entry.service {
+                if !service.is_empty() {
+                    parts.push(format!("service={}", service));
+                }
+            }
+            return Ok(parts.join(" "));
+        }
     }
     Ok("unknown".to_string())
 }
