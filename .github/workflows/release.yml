@@ -1,0 +1,195 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+
+  # Weekly schedule (every Monday at 00:00 UTC)
+  schedule:
+    - cron: '0 0 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
+    steps:
+      - name: Determine version
+        id: get-version
+        run: |
+          # Always use date-based versioning: YYYY.MM.DD format
+          VERSION=$(date +'%Y.%m.%d')
+
+          # Add timestamp for manual releases to allow multiple per day
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TIMESTAMP=$(date +'%H%M')
+            echo "version=${VERSION}.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+          else
+            # Weekly scheduled releases use just the date
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get-version.outputs.version }}
+          release_name: Release ${{ steps.get-version.outputs.version }}
+          draft: false
+          prerelease: ${{ github.event_name == 'schedule' }}
+          body: |
+            ## IP Ranger ${{ steps.get-version.outputs.version }}
+
+            Automated release with binaries for Linux, macOS, and Windows.
+
+            **Release Type:** ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
+
+            ### Features
+            - Fast IP address lookup with cloud provider identification
+            - 74,000+ IP ranges from major cloud providers
+            - Rich metadata including region and service information
+            - HTTP API and CLI interface
+
+            ### Downloads
+            Choose the binary for your platform below.
+
+            ### Verification
+            All binaries include SHA256 checksums and build attestations for supply chain security.
+
+            See [verification instructions](.github/RELEASE.md#binary-verification) for details.
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: ip-ranger
+            asset_name: ip-ranger-linux-x86_64
+
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: ip-ranger
+            asset_name: ip-ranger-linux-aarch64
+
+          # macOS x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact_name: ip-ranger
+            asset_name: ip-ranger-macos-x86_64
+
+          # macOS ARM64 (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact_name: ip-ranger
+            asset_name: ip-ranger-macos-aarch64
+
+          # Windows x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact_name: ip-ranger.exe
+            asset_name: ip-ranger-windows-x86_64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Configure cargo for cross-compilation (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml << EOF
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Rename binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} dist/${{ matrix.asset_name }}
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            certutil -hashfile ${{ matrix.asset_name }} SHA256 | grep -v "hash" | tr -d '\r\n ' > ${{ matrix.asset_name }}.sha256
+          else
+            shasum -a 256 ${{ matrix.asset_name }} | cut -d ' ' -f 1 > ${{ matrix.asset_name }}.sha256
+          fi
+
+      - name: Attest binary
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'dist/${{ matrix.asset_name }}'
+
+      - name: Upload binary to release
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/${{ matrix.asset_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload SHA256 to release
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/${{ matrix.asset_name }}.sha256
+          asset_name: ${{ matrix.asset_name }}.sha256
+          asset_content_type: text/plain
+
+      - name: Upload artifact for attestation verification
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ${{ matrix.asset_name }}-artifact
+          path: dist/${{ matrix.asset_name }}
+          retention-days: 30
