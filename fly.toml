@@ -7,8 +7,6 @@ app = 'ip-ranger'
 primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
-  builder = "remote"
 
 [env]
   PORT = '8080'
