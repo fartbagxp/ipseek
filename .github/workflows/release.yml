@@ -16,7 +16,7 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     outputs:
       version: ${{ steps.get-version.outputs.version }}
       upload_url: ${{ steps.create-release.outputs.upload_url }}
