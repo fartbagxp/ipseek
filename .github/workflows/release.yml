@@ -112,7 +112,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: true
 
@@ -167,10 +167,10 @@ jobs:
             shasum -a 256 ${{ matrix.asset_name }} | cut -d ' ' -f 1 > ${{ matrix.asset_name }}.sha256
           fi
 
-      - name: Attest binary
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: 'dist/${{ matrix.asset_name }}'
+      # - name: Attest binary
+      #   uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      #   with:
+      #     subject-path: 'dist/${{ matrix.asset_name }}'
 
       - name: Upload binary to release
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
@@ -192,9 +192,9 @@ jobs:
           asset_name: ${{ matrix.asset_name }}.sha256
           asset_content_type: text/plain
 
-      - name: Upload artifact for attestation verification
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: ${{ matrix.asset_name }}-artifact
-          path: dist/${{ matrix.asset_name }}
-          retention-days: 30
+      # - name: Upload artifact for attestation verification
+      #   uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      #   with:
+      #     name: ${{ matrix.asset_name }}-artifact
+      #     path: dist/${{ matrix.asset_name }}
+      #     retention-days: 30
