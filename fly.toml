@@ -1,15 +1,12 @@
-# fly.toml app configuration file generated for ipseek on 2024-11-13T12:26:55-05:00
+# fly.toml app configuration file generated for ipseek on 2025-12-28T07:17:24Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
 app = 'ipseek'
-primary_region = 'iad'
+primary_region = 'lax'
 
 [build]
-
-[env]
-  PORT = '8080'
 
 [http_service]
   internal_port = 8080
@@ -23,3 +20,4 @@ primary_region = 'iad'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 1024
