@@ -5,8 +5,8 @@ use serde_json::Value;
 
 // Helper to create a test app with mock state
 fn create_test_app() -> Router {
-    use ip_ranger::db::{DbFile, StoredEntry, Metadata};
-    use ip_ranger::server::{build_state_from_db, check_ip};
+    use ipseek::db::{DbFile, StoredEntry, Metadata};
+    use ipseek::server::{build_state_from_db, check_ip};
 
     // Create comprehensive test database with real-world IP ranges
     let test_entries = vec![

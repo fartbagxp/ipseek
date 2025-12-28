@@ -47,7 +47,7 @@ jobs:
           draft: false
           prerelease: ${{ github.event_name == 'schedule' }}
           body: |
-            ## IP Ranger ${{ steps.get-version.outputs.version }}
+            ## IP Seek ${{ steps.get-version.outputs.version }}
 
             Automated release with binaries for Linux, macOS, and Windows.
 
@@ -83,32 +83,32 @@ jobs:
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: ip-ranger
-            asset_name: ip-ranger-linux-x86_64
+            artifact_name: ipseek
+            asset_name: ipseek-linux-x86_64
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: ip-ranger
-            asset_name: ip-ranger-linux-aarch64
+            artifact_name: ipseek
+            asset_name: ipseek-linux-aarch64
 
           # macOS x86_64
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: ip-ranger
-            asset_name: ip-ranger-macos-x86_64
+            artifact_name: ipseek
+            asset_name: ipseek-macos-x86_64
 
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: ip-ranger
-            asset_name: ip-ranger-macos-aarch64
+            artifact_name: ipseek
+            asset_name: ipseek-macos-aarch64
 
           # Windows x86_64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact_name: ip-ranger.exe
-            asset_name: ip-ranger-windows-x86_64.exe
+            artifact_name: ipseek.exe
+            asset_name: ipseek-windows-x86_64.exe
 
     steps:
       - name: Checkout code

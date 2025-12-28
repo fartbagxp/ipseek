@@ -1,4 +1,4 @@
-# IP Ranger
+# IP Seek
 
 A fast, memory-efficient Rust application for identifying cloud providers, regions, and services from IP addresses. Designed for deployment on fly.io with minimal resource usage.
 
@@ -18,30 +18,30 @@ AWS, Azure (Public/China/Germany/Gov), GCP, GitHub, Cloudflare, DigitalOcean, Fa
 
 ### Download Pre-built Binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/fartbagxp/ip-ranger/releases):
+Download the latest release for your platform from [GitHub Releases](https://github.com/fartbagxp/ipseek/releases):
 
-- **Linux x86_64**: `ip-ranger-linux-x86_64`
-- **Linux ARM64**: `ip-ranger-linux-aarch64`
-- **macOS x86_64**: `ip-ranger-macos-x86_64`
-- **macOS ARM64**: `ip-ranger-macos-aarch64` (Apple Silicon)
-- **Windows x86_64**: `ip-ranger-windows-x86_64.exe`
+- **Linux x86_64**: `ipseek-linux-x86_64`
+- **Linux ARM64**: `ipseek-linux-aarch64`
+- **macOS x86_64**: `ipseek-macos-x86_64`
+- **macOS ARM64**: `ipseek-macos-aarch64` (Apple Silicon)
+- **Windows x86_64**: `ipseek-windows-x86_64.exe`
 
 **Verify the download:**
 
 ```bash
 # Download binary and checksum (use latest weekly release: YYYY.MM.DD)
 VERSION="2025.03.10"  # Check releases page for latest version
-curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64
-curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64.sha256
+curl -LO https://github.com/fartbagxp/ipseek/releases/download/${VERSION}/ipseek-linux-x86_64
+curl -LO https://github.com/fartbagxp/ipseek/releases/download/${VERSION}/ipseek-linux-x86_64.sha256
 
 # Verify SHA256 checksum
-echo "$(cat ip-ranger-linux-x86_64.sha256)  ip-ranger-linux-x86_64" | shasum -a 256 -c
+echo "$(cat ipseek-linux-x86_64.sha256)  ipseek-linux-x86_64" | shasum -a 256 -c
 
 # Verify build attestation (requires gh CLI)
-gh attestation verify ip-ranger-linux-x86_64 --owner fartbagxp
+gh attestation verify ipseek-linux-x86_64 --owner fartbagxp
 
 # Make executable
-chmod +x ip-ranger-linux-x86_64
+chmod +x ipseek-linux-x86_64
 ```
 
 See [`.github/RELEASE.md`](.github/RELEASE.md) for detailed verification instructions.
@@ -52,19 +52,37 @@ See [`.github/RELEASE.md`](.github/RELEASE.md) for detailed verification instruc
 cargo build --release
 ```
 
-The binary will be available at `./target/release/ip-ranger`
+The binary will be available at `./target/release/ipseek`
 
 ## Usage
 
-### 1. Build the Database
+### 1. Download and Build the Database
 
-Before using the tool, you need to build the IP database from the raw data files:
+The easiest way to get started is to download IP range files and build the database in one step:
 
 ```bash
-./target/release/ip-ranger update-local --path ./data/raw
+# Download IP ranges from GitHub and build database automatically
+./target/release/ipseek update --auto-build
 ```
 
-This processes all provider files and creates a compressed `db.bin` database (~2.3 MB).
+This downloads 56 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~2.3 MB).
+
+**Alternative: Manual Workflow**
+
+You can also download and build separately:
+
+```bash
+# Download IP range files from GitHub
+./target/release/ipseek update --path ./data/raw
+
+# Build database from downloaded files
+./target/release/ipseek update-local --path ./data/raw
+```
+
+**Options for the update command:**
+- `--path <PATH>` - Output directory for downloaded files (default: `./data/raw`)
+- `--parallel <N>` - Number of concurrent downloads (default: 5)
+- `--auto-build` - Automatically build database after downloading
 
 ### 2. CLI Usage
 
@@ -72,19 +90,19 @@ Check individual IP addresses from the command line:
 
 ```bash
 # Check an AWS IP
-./target/release/ip-ranger check 13.32.1.1
+./target/release/ipseek check 13.32.1.1
 # Output: 13.32.1.1 -> aws region=GLOBAL service=AMAZON
 
 # Check an Azure IP
-./target/release/ip-ranger check 40.72.175.176
+./target/release/ipseek check 40.72.175.176
 # Output: 40.72.175.176 -> azure-china service=ActionGroup
 
 # Check a GitHub IP
-./target/release/ip-ranger check 192.30.252.1
+./target/release/ipseek check 192.30.252.1
 # Output: 192.30.252.1 -> github service=hooks
 
 # Check an unknown IP
-./target/release/ip-ranger check 8.8.8.8
+./target/release/ipseek check 8.8.8.8
 # Output: 8.8.8.8 -> unknown
 ```
 
@@ -93,7 +111,7 @@ Check individual IP addresses from the command line:
 Run as an HTTP API server:
 
 ```bash
-./target/release/ip-ranger serve
+./target/release/ipseek serve
 ```
 
 The server runs on `http://0.0.0.0:8080`
@@ -174,17 +192,23 @@ Response:
 ## Commands
 
 ```bash
+# Download IP ranges and build database in one step
+ipseek update --auto-build
+
+# Download IP ranges only
+ipseek update --path ./data/raw
+
 # Build database from local files
-ip-ranger update-local --path ./data/raw
+ipseek update-local --path ./data/raw
 
 # Check a single IP
-ip-ranger check <IP_ADDRESS>
+ipseek check <IP_ADDRESS>
 
 # Run HTTP server
-ip-ranger serve
+ipseek serve
 
 # Specify custom database location
-ip-ranger --db /path/to/db.bin serve
+ipseek --db /path/to/db.bin serve
 ```
 
 ## Deployment on fly.io
@@ -203,6 +227,7 @@ See `fly.toml` for deployment configuration.
 ### Project Structure
 
 - `src/main.rs` - CLI argument parsing and command routing
+- `src/downloader.rs` - Download IP range files from GitHub
 - `src/db.rs` - Database serialization/deserialization
 - `src/updater.rs` - Parse provider files and build database
 - `src/lookup.rs` - CLI lookup logic with LPM (Longest Prefix Match)
@@ -215,4 +240,4 @@ See `fly.toml` for deployment configuration.
 2. Ensure format is either:
    - JSON with `prefixes`, `values`, or service-specific arrays
    - Plain text with one IP/CIDR per line
-3. Rebuild database: `ip-ranger update-local --path ./data/raw`
+3. Rebuild database: `ipseek update-local --path ./data/raw`

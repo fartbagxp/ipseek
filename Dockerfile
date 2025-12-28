@@ -13,10 +13,10 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
 COPY . .
-RUN cargo build --release --bin ip-ranger
+RUN cargo build --release --bin ipseek
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
-COPY --from=builder /app/target/release/ip-ranger /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/ip-ranger"]
+COPY --from=builder /app/target/release/ipseek /usr/local/bin
+ENTRYPOINT ["/usr/local/bin/ipseek"]

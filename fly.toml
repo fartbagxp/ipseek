@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for ip-ranger on 2024-11-13T12:26:55-05:00
+# fly.toml app configuration file generated for ipseek on 2024-11-13T12:26:55-05:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'ip-ranger'
+app = 'ipseek'
 primary_region = 'iad'
 
 [build]
