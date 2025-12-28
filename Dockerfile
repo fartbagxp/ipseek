@@ -19,4 +19,4 @@ RUN cargo build --release --bin ipseek
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/ipseek /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/ipseek"]
+ENTRYPOINT ["/usr/local/bin/ipseek serve"]
