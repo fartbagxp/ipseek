@@ -15,8 +15,16 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin ipseek
 
+# Download IP ranges and build database
+RUN ./target/release/ipseek update --auto-build
+
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
+
+# Install CA certificates for HTTPS requests
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/release/ipseek /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/ipseek serve"]
+COPY --from=builder /app/db.bin /app/db.bin
+ENTRYPOINT ["/usr/local/bin/ipseek", "serve"]
