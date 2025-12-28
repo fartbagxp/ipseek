@@ -18,7 +18,7 @@ AWS, Azure (Public/China/Germany/Gov), GCP, GitHub, Cloudflare, DigitalOcean, Fa
 
 ### Download Pre-built Binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/YOUR_USERNAME/ip-ranger/releases):
+Download the latest release for your platform from [GitHub Releases](https://github.com/fartbagxp/ip-ranger/releases):
 
 - **Linux x86_64**: `ip-ranger-linux-x86_64`
 - **Linux ARM64**: `ip-ranger-linux-aarch64`
@@ -31,14 +31,14 @@ Download the latest release for your platform from [GitHub Releases](https://git
 ```bash
 # Download binary and checksum (use latest weekly release: YYYY.MM.DD)
 VERSION="2025.03.10"  # Check releases page for latest version
-curl -LO https://github.com/YOUR_USERNAME/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64
-curl -LO https://github.com/YOUR_USERNAME/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64.sha256
+curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64
+curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/${VERSION}/ip-ranger-linux-x86_64.sha256
 
 # Verify SHA256 checksum
 echo "$(cat ip-ranger-linux-x86_64.sha256)  ip-ranger-linux-x86_64" | shasum -a 256 -c
 
 # Verify build attestation (requires gh CLI)
-gh attestation verify ip-ranger-linux-x86_64 --owner YOUR_USERNAME
+gh attestation verify ip-ranger-linux-x86_64 --owner fartbagxp
 
 # Make executable
 chmod +x ip-ranger-linux-x86_64
