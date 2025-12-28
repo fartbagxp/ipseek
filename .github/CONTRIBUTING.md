@@ -2,7 +2,7 @@
 
 ## How to run
 
-- `cargo fix` --bin "ip_ranger" - to fix code through an auto linter
+- `cargo fix` --bin "ipseek" - to fix code through an auto linter
 - `cargo fmt` - to format the code
 - `cargo update` - to update dependencies
 - `cargo build` - to build the binary

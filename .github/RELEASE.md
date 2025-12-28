@@ -32,11 +32,11 @@ Every Monday at 00:00 UTC, a new release is automatically created:
 
 Each release includes binaries for:
 
-- **Linux x86_64** (`ip-ranger-linux-x86_64`)
-- **Linux ARM64** (`ip-ranger-linux-aarch64`)
-- **macOS x86_64** (`ip-ranger-macos-x86_64`)
-- **macOS ARM64** (`ip-ranger-macos-aarch64`) - Apple Silicon
-- **Windows x86_64** (`ip-ranger-windows-x86_64.exe`)
+- **Linux x86_64** (`ipseek-linux-x86_64`)
+- **Linux ARM64** (`ipseek-linux-aarch64`)
+- **macOS x86_64** (`ipseek-macos-x86_64`)
+- **macOS ARM64** (`ipseek-macos-aarch64`) - Apple Silicon
+- **Windows x86_64** (`ipseek-windows-x86_64.exe`)
 
 ## Binary Verification
 
@@ -48,23 +48,23 @@ Each binary includes a `.sha256` file:
 
 ```bash
 # Download binary and checksum
-curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/v1.0.0/ip-ranger-linux-x86_64
-curl -LO https://github.com/fartbagxp/ip-ranger/releases/download/v1.0.0/ip-ranger-linux-x86_64.sha256
+curl -LO https://github.com/fartbagxp/ipseek/releases/download/v1.0.0/ipseek-linux-x86_64
+curl -LO https://github.com/fartbagxp/ipseek/releases/download/v1.0.0/ipseek-linux-x86_64.sha256
 
 # Verify checksum
-echo "$(cat ip-ranger-linux-x86_64.sha256)  ip-ranger-linux-x86_64" | shasum -a 256 -c
+echo "$(cat ipseek-linux-x86_64.sha256)  ipseek-linux-x86_64" | shasum -a 256 -c
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
 # Download binary and checksum
-Invoke-WebRequest -Uri "https://github.com/fartbagxp/ip-ranger/releases/download/v1.0.0/ip-ranger-windows-x86_64.exe" -OutFile "ip-ranger.exe"
-Invoke-WebRequest -Uri "https://github.com/fartbagxp/ip-ranger/releases/download/v1.0.0/ip-ranger-windows-x86_64.exe.sha256" -OutFile "ip-ranger.exe.sha256"
+Invoke-WebRequest -Uri "https://github.com/fartbagxp/ipseek/releases/download/v1.0.0/ipseek-windows-x86_64.exe" -OutFile "ipseek.exe"
+Invoke-WebRequest -Uri "https://github.com/fartbagxp/ipseek/releases/download/v1.0.0/ipseek-windows-x86_64.exe.sha256" -OutFile "ipseek.exe.sha256"
 
 # Verify checksum
-$expectedHash = Get-Content ip-ranger.exe.sha256
-$actualHash = (Get-FileHash ip-ranger.exe -Algorithm SHA256).Hash
+$expectedHash = Get-Content ipseek.exe.sha256
+$actualHash = (Get-FileHash ipseek.exe -Algorithm SHA256).Hash
 if ($expectedHash -eq $actualHash) { "✓ Checksum verified" } else { "✗ Checksum mismatch!" }
 ```
 
@@ -92,7 +92,7 @@ brew install gh
 gh auth login
 
 # Verify the binary
-gh attestation verify ip-ranger-linux-x86_64 --owner fartbagxp
+gh attestation verify ipseek-linux-x86_64 --owner fartbagxp
 ```
 
 This verifies:
@@ -122,11 +122,11 @@ VERSION="2025.03.10"  # Weekly release format
 # OR
 VERSION="2025.03.11.1430"  # Manual release format
 OWNER="fartbagxp"
-BINARY="ip-ranger-linux-x86_64"
+BINARY="ipseek-linux-x86_64"
 
 # Download binary and checksum
-curl -LO "https://github.com/${OWNER}/ip-ranger/releases/download/${VERSION}/${BINARY}"
-curl -LO "https://github.com/${OWNER}/ip-ranger/releases/download/${VERSION}/${BINARY}.sha256"
+curl -LO "https://github.com/${OWNER}/ipseek/releases/download/${VERSION}/${BINARY}"
+curl -LO "https://github.com/${OWNER}/ipseek/releases/download/${VERSION}/${BINARY}.sha256"
 
 # Verify SHA256
 echo "$(cat ${BINARY}.sha256)  ${BINARY}" | shasum -a 256 -c
@@ -165,9 +165,9 @@ chmod +x ${BINARY}
 
 **Binary won't run:**
 
-- Linux/macOS: Make sure it's executable: `chmod +x ip-ranger-*`
+- Linux/macOS: Make sure it's executable: `chmod +x ipseek-*`
 - Linux: Check architecture: `uname -m` (should match x86_64 or aarch64)
-- macOS: If blocked by Gatekeeper: Right-click → Open, or remove quarantine: `xattr -d com.apple.quarantine ip-ranger-*`
+- macOS: If blocked by Gatekeeper: Right-click → Open, or remove quarantine: `xattr -d com.apple.quarantine ipseek-*`
 
 ## Release Workflow Details
 

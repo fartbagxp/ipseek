@@ -7,7 +7,7 @@
 - [ ] Review `.github/workflows/release.yml` settings
 - [ ] Ensure `data/raw/` directory has IP range files
 - [ ] Build and test locally: `cargo build --release`
-- [ ] Generate initial db.bin: `./target/release/ip-ranger update-local --path ./data/raw`
+- [ ] Generate initial db.bin: `./target/release/ipseek update-local --path ./data/raw`
 - [ ] Commit db.bin to repository (for fly.io deployment)
 
 ## Triggering Your First Release
