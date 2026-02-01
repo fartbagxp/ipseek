@@ -12,64 +12,8 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      version: ${{ steps.get-version.outputs.version }}
-      upload_url: ${{ steps.create-release.outputs.upload_url }}
-    steps:
-      - name: Determine version
-        id: get-version
-        run: |
-          # Always use date-based versioning: YYYY.MM.DD format
-          VERSION=$(date +'%Y.%m.%d')
-
-          # Add timestamp for manual releases to allow multiple per day
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TIMESTAMP=$(date +'%H%M')
-            echo "version=${VERSION}.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
-          else
-            # Weekly scheduled releases use just the date
-            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create Release
-        id: create-release
-        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get-version.outputs.version }}
-          release_name: Release ${{ steps.get-version.outputs.version }}
-          draft: false
-          prerelease: ${{ github.event_name == 'schedule' }}
-          body: |
-            ## IP Seek ${{ steps.get-version.outputs.version }}
-
-            Automated release with binaries for Linux, macOS, and Windows.
-
-            **Release Type:** ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
-
-            ### Features
-            - Fast IP address lookup with cloud provider identification
-            - 74,000+ IP ranges from major cloud providers
-            - Rich metadata including region and service information
-            - HTTP API and CLI interface
-
-            ### Downloads
-            Choose the binary for your platform below.
-
-            ### Verification
-            All binaries include SHA256 checksums and build attestations for supply chain security.
-
-            See [verification instructions](.github/RELEASE.md#binary-verification) for details.
-
   build:
     name: Build ${{ matrix.target }}
-    needs: create-release
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -117,12 +61,9 @@ jobs:
           persist-credentials: true
 
       - name: Install Rust
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          profile: minimal
-          override: true
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -172,29 +113,61 @@ jobs:
       #   with:
       #     subject-path: 'dist/${{ matrix.asset_name }}'
 
-      - name: Upload binary to release
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/${{ matrix.asset_name }}
-          asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/octet-stream
+          name: ${{ matrix.asset_name }}
+          path: |
+            dist/${{ matrix.asset_name }}
+            dist/${{ matrix.asset_name }}.sha256
 
-      - name: Upload SHA256 to release
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Determine version
+        id: get-version
+        run: |
+          VERSION=$(date +'%Y.%m.%d')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TIMESTAMP=$(date +'%H%M')
+            echo "version=${VERSION}.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/${{ matrix.asset_name }}.sha256
-          asset_name: ${{ matrix.asset_name }}.sha256
-          asset_content_type: text/plain
+          path: dist
+          merge-multiple: true
 
-      # - name: Upload artifact for attestation verification
-      #   uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-      #   with:
-      #     name: ${{ matrix.asset_name }}-artifact
-      #     path: dist/${{ matrix.asset_name }}
-      #     retention-days: 30
+      - name: Create Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ steps.get-version.outputs.version }}
+          name: Release ${{ steps.get-version.outputs.version }}
+          draft: false
+          prerelease: ${{ github.event_name == 'schedule' }}
+          files: dist/*
+          body: |
+            ## IP Seek ${{ steps.get-version.outputs.version }}
+
+            Automated release with binaries for Linux, macOS, and Windows.
+
+            **Release Type:** ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
+
+            ### Features
+            - Fast IP address lookup with cloud provider identification
+            - 74,000+ IP ranges from major cloud providers
+            - Rich metadata including region and service information
+            - HTTP API and CLI interface
+
+            ### Downloads
+            Choose the binary for your platform below.
+
+            ### Verification
+            All binaries include SHA256 checksums for supply chain security.
