@@ -2,6 +2,10 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
+    groups:
+      cargo-deps:
+        patterns:
+          - '*'
     schedule:
       interval: monthly
     cooldown:
