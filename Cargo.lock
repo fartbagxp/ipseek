@@ -681,9 +681,9 @@ dependencies = [
 
 [[package]]
 name = "iptrie"
-version = "0.10.3"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d3e70916e16da178ce4d131f29381c51f52b33416f110827a31e954ee1ca8b1"
+checksum = "702c6ba6dd676ea34f88fc4f9b7fcfa1d5b59f524133e0b99c94db893637da74"
 dependencies = [
  "ipnet",
 ]
