@@ -151,7 +151,7 @@ jobs:
           tag_name: ${{ steps.get-version.outputs.version }}
           name: Release ${{ steps.get-version.outputs.version }}
           draft: false
-          prerelease: ${{ github.event_name == 'schedule' }}
+          prerelease: false
           files: dist/*
           body: |
             ## IP Seek ${{ steps.get-version.outputs.version }}
