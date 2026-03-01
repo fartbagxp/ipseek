@@ -5,20 +5,20 @@ edition = "2021"
 
 [dependencies]
 axum = "0.8.8"
-env_logger = "0.11.5"
+env_logger = "0.11.9"
 ipnet = { version = "2.10.1", features = ["serde"] }
 ipnetwork = "0.21.1"
-iptrie = "0.11.0"
+iptrie = "0.11.1"
 log = "0.4.29"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.149"
 reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "fs"] }
-rkyv = "0.8.14"
-tempfile = "3.24.0"
+rkyv = "0.8.15"
+tempfile = "3.25.0"
 anyhow = "1.0"
 flate2 = "1.1"
-clap = { version = "4.5.54", features = ["derive"] }
+clap = { version = "4.5.58", features = ["derive"] }
 
 [dev-dependencies]
 hyper = "1.5.0"
