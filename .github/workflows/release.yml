@@ -61,8 +61,9 @@ jobs:
           persist-credentials: true
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools (Linux ARM64)
@@ -146,28 +147,27 @@ jobs:
           merge-multiple: true
 
       - name: Create Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-        with:
-          tag_name: ${{ steps.get-version.outputs.version }}
-          name: Release ${{ steps.get-version.outputs.version }}
-          draft: false
-          prerelease: false
-          files: dist/*
-          body: |
-            ## IP Seek ${{ steps.get-version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+          RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
+        run: |
+          gh release create "$VERSION" dist/* \
+            --title "Release $VERSION" \
+            --notes "## IP Seek $VERSION
 
-            Automated release with binaries for Linux, macOS, and Windows.
+          Automated release with binaries for Linux, macOS, and Windows.
 
-            **Release Type:** ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
+          **Release Type:** $RELEASE_TYPE
 
-            ### Features
-            - Fast IP address lookup with cloud provider identification
-            - 74,000+ IP ranges from major cloud providers
-            - Rich metadata including region and service information
-            - HTTP API and CLI interface
+          ### Features
+          - Fast IP address lookup with cloud provider identification
+          - 74,000+ IP ranges from major cloud providers
+          - Rich metadata including region and service information
+          - HTTP API and CLI interface
 
-            ### Downloads
-            Choose the binary for your platform below.
+          ### Downloads
+          Choose the binary for your platform below.
 
-            ### Verification
-            All binaries include SHA256 checksums for supply chain security.
+          ### Verification
+          All binaries include SHA256 checksums for supply chain security."
