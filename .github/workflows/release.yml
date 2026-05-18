@@ -64,7 +64,6 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
         with:
           toolchain: stable
-          targets: ${{ matrix.target }}
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
