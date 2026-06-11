@@ -1,31 +1,256 @@
+use crate::db::{DbFile, Metadata, StoredEntry, StoredFile};
 use anyhow::{Context, Result};
 use serde_json::Value;
-use crate::db::{DbFile, StoredEntry, StoredFile, Metadata};
 use std::collections::HashMap;
 
-fn normalize_ip_prefix(prefix: &str) -> String {
-    if prefix.contains('/') {
-        prefix.to_string()
-    } else {
-        // Check if it's a valid IP and add appropriate CIDR suffix
-        if let Ok(ip) = prefix.parse::<std::net::IpAddr>() {
-            match ip {
-                std::net::IpAddr::V4(_) => format!("{}/32", prefix),
-                std::net::IpAddr::V6(_) => format!("{}/128", prefix),
+fn normalize_ip_prefix(prefix: &str) -> Option<String> {
+    let p = prefix.trim();
+    if p.is_empty() {
+        return None;
+    }
+    if p.contains('/') {
+        // Validate it parses as a CIDR.
+        if p.parse::<ipnet::IpNet>().is_ok() {
+            return Some(p.to_string());
+        }
+        return None;
+    }
+    match p.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(_)) => Some(format!("{}/32", p)),
+        Ok(std::net::IpAddr::V6(_)) => Some(format!("{}/128", p)),
+        Err(_) => None,
+    }
+}
+
+/// Accumulates parsed entries for a single source file.
+struct Sink<'a> {
+    provider: &'a str,
+    entries: &'a mut Vec<StoredEntry>,
+    prefixes: Vec<String>,
+    count: usize,
+}
+
+impl<'a> Sink<'a> {
+    fn push(
+        &mut self,
+        raw_prefix: &str,
+        region: Option<String>,
+        service: Option<String>,
+        metadata: HashMap<String, String>,
+    ) {
+        if let Some(prefix) = normalize_ip_prefix(raw_prefix) {
+            self.entries.push(StoredEntry {
+                prefix: prefix.clone(),
+                provider: self.provider.to_string(),
+                region: region.filter(|s| !s.is_empty()),
+                service: service.filter(|s| !s.is_empty()),
+                metadata: Metadata { fields: metadata },
+            });
+            self.prefixes.push(prefix);
+            self.count += 1;
+        }
+    }
+
+    fn simple(&mut self, raw_prefix: &str, service: Option<String>) {
+        self.push(raw_prefix, None, service, HashMap::new());
+    }
+}
+
+fn str_of(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(|x| x.as_str()).map(|s| s.to_string())
+}
+
+/// Try every known structured shape against a parsed JSON value.
+fn parse_json(val: &Value, sink: &mut Sink) {
+    // Azure: { "values": [{ "properties": { "addressPrefixes": [...] } }] }
+    if let Some(values) = val.get("values").and_then(|v| v.as_array()) {
+        let cloud = str_of(val, "cloud");
+        for value in values {
+            if let Some(props) = value.get("properties") {
+                let region = str_of(props, "region");
+                let service = str_of(props, "systemService");
+                let mut meta = HashMap::new();
+                if let Some(p) = str_of(props, "platform") {
+                    meta.insert("platform".into(), p);
+                }
+                if let Some(c) = &cloud {
+                    meta.insert("cloud".into(), c.clone());
+                }
+                if let Some(arr) = props.get("addressPrefixes").and_then(|v| v.as_array()) {
+                    for p in arr.iter().filter_map(|x| x.as_str()) {
+                        sink.push(p, region.clone(), service.clone(), meta.clone());
+                    }
+                }
             }
-        } else {
-            prefix.to_string()
+        }
+    }
+
+    // AWS / GCP: { "prefixes": [{ ip_prefix|ipv4_prefix|ipv4Prefix|ipv6Prefix, ... }] }
+    if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
+        for obj in arr {
+            let pref = ["ip_prefix", "ipv4_prefix", "ipv4Prefix", "ipv6_prefix", "ipv6Prefix"]
+                .iter()
+                .find_map(|k| str_of(obj, k));
+            if let Some(pref) = pref {
+                let region = str_of(obj, "region").or_else(|| str_of(obj, "scope"));
+                let service = str_of(obj, "service");
+                let mut meta = HashMap::new();
+                if let Some(nbg) = str_of(obj, "network_border_group") {
+                    meta.insert("network_border_group".into(), nbg);
+                }
+                sink.push(&pref, region, service, meta);
+            }
+        }
+    }
+
+    // AWS IPv6: { "ipv6_prefixes": [{ "ipv6_prefix": "..." }] }
+    if let Some(arr) = val.get("ipv6_prefixes").and_then(|v| v.as_array()) {
+        for obj in arr {
+            if let Some(pref) = str_of(obj, "ipv6_prefix") {
+                let region = str_of(obj, "region");
+                let service = str_of(obj, "service");
+                let mut meta = HashMap::new();
+                if let Some(nbg) = str_of(obj, "network_border_group") {
+                    meta.insert("network_border_group".into(), nbg);
+                }
+                sink.push(&pref, region, service, meta);
+            }
+        }
+    }
+
+    // Fastly: { "addresses": [...], "ipv6_addresses": [...] }
+    for key in ["addresses", "ipv6_addresses"] {
+        if let Some(arr) = val.get(key).and_then(|v| v.as_array()) {
+            for p in arr.iter().filter_map(|x| x.as_str()) {
+                sink.simple(p, None);
+            }
+        }
+    }
+
+    // Atlassian: { "items": [{ "cidr": "...", "product": [...], "region": [...] }] }
+    if let Some(items) = val.get("items").and_then(|v| v.as_array()) {
+        for it in items {
+            if let Some(cidr) = str_of(it, "cidr") {
+                let region = it
+                    .get("region")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let service = it
+                    .get("product")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                sink.push(&cidr, region, service, HashMap::new());
+            }
+        }
+    }
+
+    // Oracle: { "regions": [{ "region": "...", "cidrs": [{ "cidr": "..." }] }] }
+    if let Some(regions) = val.get("regions").and_then(|v| v.as_array()) {
+        for r in regions {
+            let region = str_of(r, "region");
+            if let Some(cidrs) = r.get("cidrs").and_then(|v| v.as_array()) {
+                for c in cidrs {
+                    if let Some(cidr) = str_of(c, "cidr") {
+                        sink.push(&cidr, region.clone(), None, HashMap::new());
+                    }
+                }
+            }
+        }
+    }
+
+    // Zscaler / ZDX hub: { "hubPrefixes": ["...", ...] }
+    if let Some(arr) = val.get("hubPrefixes").and_then(|v| v.as_array()) {
+        for p in arr.iter().filter_map(|x| x.as_str()) {
+            sink.simple(p, None);
+        }
+    }
+
+    // GitHub: top-level service arrays of CIDR strings.
+    // Datadog: top-level objects { "prefixes_ipv4": [...], "prefixes_ipv6": [...] }.
+    // Seqera: { "egress": [...], "ingress": [...] }.
+    // Okta: { "<cell>": { "ip_ranges": [...] } }.
+    // Grafana synthetic / generic: { "<name>": [ip, ...] }.
+    if let Some(obj) = val.as_object() {
+        for (key, sub) in obj {
+            match sub {
+                // Direct array of address strings -> service/region = key.
+                Value::Array(arr) if arr.iter().all(|x| x.is_string()) => {
+                    for p in arr.iter().filter_map(|x| x.as_str()) {
+                        if normalize_ip_prefix(p).is_some() {
+                            sink.simple(p, Some(key.clone()));
+                        }
+                    }
+                }
+                // Nested object carrying its own address lists.
+                Value::Object(inner) => {
+                    let mut matched = false;
+                    for (subkey, list) in inner {
+                        // Datadog: prefixes_ipv4 / prefixes_ipv6 ; Okta: ip_ranges.
+                        let is_addr_list = subkey.contains("prefix")
+                            || subkey.contains("ip_range")
+                            || subkey.contains("addresses");
+                        if is_addr_list {
+                            if let Some(arr) = list.as_array() {
+                                for p in arr.iter().filter_map(|x| x.as_str()) {
+                                    sink.push(p, None, Some(key.clone()), HashMap::new());
+                                }
+                                matched = true;
+                            }
+                        }
+                    }
+                    // Deeply nested shapes (e.g. Zscaler cenr:
+                    // continent -> city -> [{ "range": ... }]).
+                    if !matched {
+                        collect_ranges_deep(sub, key, sink);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
 
-fn create_entry(prefix: String, provider: String, region: Option<String>, service: Option<String>, metadata: HashMap<String, String>) -> StoredEntry {
-    StoredEntry {
-        prefix,
-        provider,
-        region,
-        service,
-        metadata: Metadata { fields: metadata },
+/// Recursively pull `range`/`cidr`/`ip_prefix` style fields out of arbitrarily
+/// nested structures (used for Zscaler `cenr` continent/city trees).
+fn collect_ranges_deep(val: &Value, region: &str, sink: &mut Sink) {
+    match val {
+        Value::Array(arr) => {
+            for v in arr {
+                collect_ranges_deep(v, region, sink);
+            }
+        }
+        Value::Object(map) => {
+            for k in ["range", "cidr", "ip_prefix", "ipv4_prefix", "ipv6_prefix"] {
+                if let Some(p) = map.get(k).and_then(|v| v.as_str()) {
+                    sink.push(p, Some(region.to_string()), None, HashMap::new());
+                }
+            }
+            for v in map.values() {
+                if v.is_array() || v.is_object() {
+                    collect_ranges_deep(v, region, sink);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Last-resort: walk any JSON and record every string that is a valid IP/CIDR,
+/// so no provider file is ever silently dropped.
+fn collect_any_cidr(val: &Value, sink: &mut Sink) {
+    match val {
+        Value::String(s) => {
+            if normalize_ip_prefix(s).is_some() {
+                sink.simple(s, None);
+            }
+        }
+        Value::Array(arr) => arr.iter().for_each(|v| collect_any_cidr(v, sink)),
+        Value::Object(map) => map.values().for_each(|v| collect_any_cidr(v, sink)),
+        _ => {}
     }
 }
 
@@ -38,204 +263,88 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
     let mut stored_entries: Vec<StoredEntry> = Vec::new();
     let mut stored_files: Vec<StoredFile> = Vec::new();
 
-    // Read all .json and .txt files from the directory
     for entry in std::fs::read_dir(path).context("reading data directory")? {
         let entry = entry?;
         let file_path = entry.path();
-
         if !file_path.is_file() {
             continue;
         }
-
         let name = match file_path.file_name().and_then(|n| n.to_str()) {
             Some(n) => n.to_string(),
             None => continue,
         };
-
+        // IANA registry CSVs map /8s to RIRs, not to providers — skip them so
+        // results stay focused on actual cloud providers and services.
         if !name.ends_with(".json") && !name.ends_with(".txt") {
             continue;
         }
 
         log::info!("Processing local file: {}", name);
-        println!("processing: {}", name);
-
         let text = std::fs::read_to_string(&file_path)
             .with_context(|| format!("reading file {}", name))?;
 
-        let mut this_file_prefixes: Vec<String> = Vec::new();
+        let provider = name
+            .trim_end_matches(".json")
+            .trim_end_matches(".txt")
+            .to_string();
 
-        // First try JSON parsing (expected for many provider files)
-        if let Ok(val) = serde_json::from_str::<Value>(&text) {
-            let provider = name.trim_end_matches(".json").trim_end_matches(".txt").to_string();
+        let mut sink = Sink {
+            provider: &provider,
+            entries: &mut stored_entries,
+            prefixes: Vec::new(),
+            count: 0,
+        };
 
-            // Azure format: { "values": [{ "properties": { "addressPrefixes": [...] } }] }
-            if let Some(values) = val.get("values").and_then(|v| v.as_array()) {
-                for value in values {
-                    if let Some(props) = value.get("properties") {
-                        let region = props.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let service = props.get("systemService").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-                        let mut metadata = HashMap::new();
-                        if let Some(platform) = props.get("platform").and_then(|v| v.as_str()) {
-                            metadata.insert("platform".to_string(), platform.to_string());
-                        }
-                        if let Some(cloud) = val.get("cloud").and_then(|v| v.as_str()) {
-                            metadata.insert("cloud".to_string(), cloud.to_string());
-                        }
-
-                        if let Some(addr_prefixes) = props.get("addressPrefixes").and_then(|v| v.as_array()) {
-                            for prefix in addr_prefixes {
-                                if let Some(pref_str) = prefix.as_str() {
-                                    let normalized = normalize_ip_prefix(pref_str);
-                                    stored_entries.push(create_entry(
-                                        normalized.clone(),
-                                        provider.clone(),
-                                        region.clone(),
-                                        service.clone(),
-                                        metadata.clone()
-                                    ));
-                                    this_file_prefixes.push(normalized);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // AWS format: { "prefixes": [{ "ip_prefix": "...", "region": "...", "service": "..." }] }
-            if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
-                for obj in arr {
-                    let pref_opt = obj.get("ip_prefix").and_then(|v| v.as_str())
-                        .or_else(|| obj.get("ipv4_prefix").and_then(|v| v.as_str()));
-
-                    if let Some(pref) = pref_opt {
-                        let region = obj.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let service = obj.get("service").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-                        let mut metadata = HashMap::new();
-                        if let Some(nbg) = obj.get("network_border_group").and_then(|v| v.as_str()) {
-                            metadata.insert("network_border_group".to_string(), nbg.to_string());
-                        }
-
-                        stored_entries.push(create_entry(
-                            pref.to_string(),
-                            provider.clone(),
-                            region,
-                            service,
-                            metadata
-                        ));
-                        this_file_prefixes.push(pref.to_string());
-                    }
-                }
-            }
-
-            if let Some(arr6) = val.get("ipv6_prefixes").and_then(|v| v.as_array()) {
-                for obj in arr6 {
-                    if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
-                        let region = obj.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let service = obj.get("service").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-                        let mut metadata = HashMap::new();
-                        if let Some(nbg) = obj.get("network_border_group").and_then(|v| v.as_str()) {
-                            metadata.insert("network_border_group".to_string(), nbg.to_string());
-                        }
-
-                        stored_entries.push(create_entry(
-                            pref.to_string(),
-                            provider.clone(),
-                            region,
-                            service,
-                            metadata
-                        ));
-                        this_file_prefixes.push(pref.to_string());
-                    }
-                }
-            }
-
-            // GitHub format: { "hooks": [...], "web": [...], ... }
-            // Check for service-specific arrays
-            let service_keys = ["hooks", "web", "api", "git", "packages", "pages", "importer", "actions", "dependabot"];
-            for service_key in &service_keys {
-                if let Some(arr) = val.get(service_key).and_then(|v| v.as_array()) {
-                    for item in arr {
-                        if let Some(pref_str) = item.as_str() {
-                            let normalized = normalize_ip_prefix(pref_str);
-                            stored_entries.push(create_entry(
-                                normalized.clone(),
-                                provider.clone(),
-                                None,
-                                Some(service_key.to_string()),
-                                HashMap::new()
-                            ));
-                            this_file_prefixes.push(normalized);
-                        }
-                    }
-                }
-            }
-
-            // Fallback: Generic array of objects with ip_prefix/ipv6_prefix
-            if let Some(arr) = val.as_array() {
-                for obj in arr {
-                    if let Some(pref) = obj.get("ip_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(create_entry(
-                            pref.to_string(),
-                            provider.clone(),
-                            None,
-                            None,
-                            HashMap::new()
-                        ));
-                        this_file_prefixes.push(pref.to_string());
-                    }
-                    if let Some(pref) = obj.get("ipv6_prefix").and_then(|v| v.as_str()) {
-                        stored_entries.push(create_entry(
-                            pref.to_string(),
-                            provider.clone(),
-                            None,
-                            None,
-                            HashMap::new()
-                        ));
-                        this_file_prefixes.push(pref.to_string());
-                    }
+        if name.ends_with(".json") {
+            if let Ok(val) = serde_json::from_str::<Value>(&text) {
+                parse_json(&val, &mut sink);
+                // Nothing matched a known shape -> sweep for any IP/CIDR strings.
+                if sink.count == 0 {
+                    collect_any_cidr(&val, &mut sink);
                 }
             }
         } else {
-            // Plain text format
-            let provider = name.trim_end_matches(".json").trim_end_matches(".txt").to_string();
+            // Plain text / CSV: one prefix per line, first comma-field for CSV.
             for line in text.lines() {
                 let l = line.trim();
-                if l.is_empty() { continue; }
-
-                let prefix = normalize_ip_prefix(l);
-                stored_entries.push(create_entry(
-                    prefix.clone(),
-                    provider.clone(),
-                    None,
-                    None,
-                    HashMap::new()
-                ));
-                this_file_prefixes.push(prefix);
+                if l.is_empty() || l.starts_with('#') {
+                    continue;
+                }
+                let candidate = l.split(',').next().unwrap_or(l).trim();
+                sink.simple(candidate, None);
             }
         }
 
-        stored_files.push(StoredFile { name: name.clone(), content: text.clone(), prefixes: this_file_prefixes });
+        let prefixes = std::mem::take(&mut sink.prefixes);
+        if sink.count == 0 {
+            log::warn!("No prefixes parsed from {}", name);
+        }
+        stored_files.push(StoredFile {
+            name: name.clone(),
+            content: text,
+            prefixes,
+        });
     }
 
-    // dedupe - keep the first occurrence with most complete metadata
-    let mut map: std::collections::HashMap<String, StoredEntry> = std::collections::HashMap::with_capacity(stored_entries.len());
+    // Dedupe by (prefix, provider) so cross-provider overlaps are preserved,
+    // keeping the first (most complete) entry per provider/prefix.
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut deduped: Vec<StoredEntry> = Vec::with_capacity(stored_entries.len());
     for e in stored_entries {
-        map.entry(e.prefix.clone()).or_insert(e);
+        if seen.insert((e.prefix.clone(), e.provider.clone())) {
+            deduped.push(e);
+        }
     }
 
-    let deduped: Vec<StoredEntry> = map.into_values().collect();
+    println!(
+        "Processed {} files, {} unique (prefix, provider) entries",
+        stored_files.len(),
+        deduped.len()
+    );
 
-    println!("Processed {} files, {} unique prefixes", stored_files.len(), deduped.len());
-
-    let db = DbFile {
+    Ok(DbFile {
         entries: deduped,
         source_commit: None,
         files: stored_files,
-    };
-
-    Ok(db)
+    })
 }
-

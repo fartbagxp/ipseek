@@ -2,6 +2,7 @@ mod db;
 mod downloader;
 mod updater;
 mod lookup;
+mod resolve;
 mod server;
 
 use clap::{Parser, Subcommand};
@@ -68,6 +69,9 @@ async fn main() -> Result<()> {
         Commands::Serve => {
             let db = db::load_db(&cli.db)?;
             let state = server::build_state_from_db(&db);
+            // The served path only needs the prefix table; free the raw file
+            // contents and the source DbFile to keep the resident set small.
+            drop(db);
             let state = std::sync::Arc::new(state);
 
             // start server with state extension
