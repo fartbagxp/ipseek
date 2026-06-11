@@ -81,6 +81,21 @@ fn create_test_app() -> Router {
             service: Some("DNS".to_string()),
             metadata: Metadata { fields: std::collections::HashMap::new() },
         },
+        // Overlap: a service (Stripe /24) hosted inside a cloud (AWS /16).
+        StoredEntry {
+            prefix: "50.0.0.0/16".to_string(),
+            provider: "aws".to_string(),
+            region: Some("us-east-1".to_string()),
+            service: Some("AMAZON".to_string()),
+            metadata: Metadata { fields: std::collections::HashMap::new() },
+        },
+        StoredEntry {
+            prefix: "50.0.1.0/24".to_string(),
+            provider: "stripe".to_string(),
+            region: None,
+            service: None,
+            metadata: Metadata { fields: std::collections::HashMap::new() },
+        },
     ];
 
     let db = DbFile {
@@ -587,6 +602,78 @@ async fn test_check_ip_invalid_port() {
     let json: Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(json["error"], "Invalid IP address");
+}
+
+// ===== Layered / overlapping provider tests =====
+
+#[tokio::test]
+async fn test_check_ip_service_on_cloud_layers() {
+    let app = create_test_app();
+
+    // 50.0.1.5 is inside both Stripe's /24 (service) and AWS's /16 (cloud).
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/50.0.1.5")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"], "");
+
+    // Primary (top-level) fields point at the overlay service for back-compat.
+    assert_eq!(json["data"]["provider"], "stripe");
+    assert_eq!(json["data"]["kind"], "service");
+
+    // Two layers, service first then the underlying cloud.
+    let layers = json["data"]["layers"].as_array().unwrap();
+    assert_eq!(layers.len(), 2);
+    assert_eq!(layers[0]["provider"], "stripe");
+    assert_eq!(layers[0]["kind"], "service");
+    assert_eq!(layers[1]["provider"], "aws");
+    assert_eq!(layers[1]["kind"], "cloud");
+    assert_eq!(layers[1]["region"], "us-east-1");
+
+    assert_eq!(
+        json["data"]["summary"],
+        "stripe (service) on aws (cloud · us-east-1 · AMAZON)"
+    );
+}
+
+#[tokio::test]
+async fn test_check_ip_cloud_only_single_layer() {
+    let app = create_test_app();
+
+    // 50.0.2.5 is inside AWS's /16 only (no overlay service).
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/50.0.2.5")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["data"]["provider"], "aws");
+    assert_eq!(json["data"]["kind"], "cloud");
+    let layers = json["data"]["layers"].as_array().unwrap();
+    assert_eq!(layers.len(), 1);
+    assert_eq!(json["data"]["summary"], "aws (cloud · us-east-1 · AMAZON)");
 }
 
 #[tokio::test]

@@ -4,10 +4,11 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 ## Features
 
-- 🚀 **Fast lookups** using optimized IP trie data structure
-- 🌍 **74,000+ IP ranges** from major cloud providers (AWS, Azure, GCP, GitHub, Cloudflare, and more)
+- 🚀 **Fast lookups** over a flat, in-memory longest-prefix table (no database)
+- 🌍 **90,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
+- 🧅 **Layered results** — when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows *both*: the service overlay **and** the underlying cloud infrastructure
 - 📊 **Rich metadata** including region, service, and provider-specific details
-- 💾 **Minimal memory footprint** with gzip-compressed JSON database
+- 💾 **Minimal memory footprint** — single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
 - 🔧 **Dual interface** - HTTP API and CLI tool
 
 ## Supported Providers
@@ -65,7 +66,7 @@ The easiest way to get started is to download IP range files and build the datab
 ./target/release/ipseek update --auto-build
 ```
 
-This downloads 56 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~2.3 MB).
+This downloads 56 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~3 MB, ~90k ranges).
 
 **Alternative: Manual Workflow**
 
@@ -88,22 +89,24 @@ You can also download and build separately:
 
 Check individual IP addresses from the command line:
 
+The CLI prints a one-line, layered summary. Services are shown first, then the
+cloud infrastructure they run on top of (`service on cloud`).
+
 ```bash
-# Check an AWS IP
-./target/release/ipseek check 13.32.1.1
-# Output: 13.32.1.1 -> aws region=GLOBAL service=AMAZON
+# A plain cloud IP
+./target/release/ipseek check 8.8.8.0
+# Output: 8.8.8.0 -> gcp (cloud)
 
-# Check an Azure IP
-./target/release/ipseek check 40.72.175.176
-# Output: 40.72.175.176 -> azure-china service=ActionGroup
+# A service running on a cloud — shows both layers
+./target/release/ipseek check 3.233.144.1
+# Output: 3.233.144.1 -> datadog (service · agents) on aws (cloud · us-east-1 · AMAZON)
 
-# Check a GitHub IP
-./target/release/ipseek check 192.30.252.1
-# Output: 192.30.252.1 -> github service=hooks
+./target/release/ipseek check 13.112.224.240
+# Output: 13.112.224.240 -> stripe (service) on aws (cloud · ap-northeast-1 · AMAZON)
 
-# Check an unknown IP
-./target/release/ipseek check 8.8.8.8
-# Output: 8.8.8.8 -> unknown
+# An unknown IP
+./target/release/ipseek check 1.1.1.1
+# Output: 1.1.1.1 -> unknown
 ```
 
 ### 3. HTTP Server
@@ -122,11 +125,20 @@ The server runs on `http://0.0.0.0:8080`
 
 **GET /{ip}** - Lookup IP address
 
+The `data` object carries a backward-compatible **primary** match at the top
+level (`provider`, `prefix`, `region`, `service`, `metadata`, `kind`) plus two
+fields describing the full picture:
+
+- `summary` — a one-line human-readable description.
+- `layers` — every provider that claims the IP, ordered service-first
+  (overlay) then cloud-last (infrastructure). Each layer has a `kind` of
+  either `"service"` or `"cloud"`.
+
 Example requests:
 
 ```bash
-# AWS IP
-curl http://localhost:8080/13.32.1.1 | jq '.'
+# A service on a cloud — Datadog hosted on AWS
+curl http://localhost:8080/3.233.144.1 | jq '.'
 ```
 
 Response:
@@ -135,42 +147,36 @@ Response:
 {
   "error": "",
   "data": {
-    "provider": "aws",
-    "prefix": "13.32.0.0/15",
-    "region": "GLOBAL",
-    "service": "AMAZON",
-    "metadata": {
-      "network_border_group": "GLOBAL"
-    }
+    "ip": "3.233.144.1",
+    "provider": "datadog",
+    "prefix": "3.233.144.0/20",
+    "region": null,
+    "service": "agents",
+    "kind": "service",
+    "metadata": {},
+    "summary": "datadog (service · agents) on aws (cloud · us-east-1 · AMAZON)",
+    "layers": [
+      {
+        "provider": "datadog",
+        "kind": "service",
+        "prefix": "3.233.144.0/20",
+        "service": "agents"
+      },
+      {
+        "provider": "aws",
+        "kind": "cloud",
+        "prefix": "3.224.0.0/12",
+        "region": "us-east-1",
+        "service": "AMAZON",
+        "metadata": { "network_border_group": "us-east-1" }
+      }
+    ]
   }
 }
 ```
 
 ```bash
-# Azure IP
-curl http://localhost:8080/40.72.175.176 | jq '.'
-```
-
-Response:
-
-```json
-{
-  "error": "",
-  "data": {
-    "provider": "azure-china",
-    "prefix": "40.72.175.176/30",
-    "region": "",
-    "service": "ActionGroup",
-    "metadata": {
-      "cloud": "China",
-      "platform": "Azure"
-    }
-  }
-}
-```
-
-```bash
-# Unknown IP
+# A plain cloud IP — single layer
 curl http://localhost:8080/8.8.8.8 | jq '.'
 ```
 
@@ -180,11 +186,40 @@ Response:
 {
   "error": "",
   "data": {
+    "ip": "8.8.8.8",
+    "provider": "gcp",
+    "prefix": "8.8.8.0/24",
+    "region": null,
+    "service": null,
+    "kind": "cloud",
+    "metadata": {},
+    "summary": "gcp (cloud)",
+    "layers": [
+      { "provider": "gcp", "kind": "cloud", "prefix": "8.8.8.0/24" }
+    ]
+  }
+}
+```
+
+```bash
+# Unknown IP
+curl http://localhost:8080/1.1.1.1 | jq '.'
+```
+
+Response:
+
+```json
+{
+  "error": "",
+  "data": {
+    "ip": "1.1.1.1",
     "provider": "unknown",
     "prefix": null,
     "region": null,
     "service": null,
-    "metadata": {}
+    "kind": null,
+    "summary": "unknown",
+    "layers": []
   }
 }
 ```
@@ -217,7 +252,7 @@ The application is designed for minimal memory usage on fly.io:
 
 1. Database is loaded once on startup
 2. All lookups use in-memory trie structure
-3. Gzip compression keeps database size small (~2.3 MB)
+3. Gzip compression keeps database size small (~3 MB)
 4. Supports auto-stop/start machines
 
 See `fly.toml` for deployment configuration.

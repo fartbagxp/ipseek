@@ -650,12 +650,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ipnetwork"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf370abdafd54d13e54a620e8c3e1145f28e46cc9d704bc6d94414559df41763"
-
-[[package]]
 name = "ipseek"
 version = "1.0.0"
 dependencies = [
@@ -666,8 +660,6 @@ dependencies = [
  "flate2",
  "hyper",
  "ipnet",
- "ipnetwork",
- "iptrie",
  "log",
  "reqwest",
  "rkyv",
@@ -676,15 +668,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
-]
-
-[[package]]
-name = "iptrie"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc71495f3de05745b79a8cfa1d629394878f8f76173bd4b52cff39fabda918da"
-dependencies = [
- "ipnet",
 ]
 
 [[package]]
