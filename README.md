@@ -6,9 +6,9 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 - 🚀 **Fast lookups** over a flat, in-memory longest-prefix table (no database)
 - 🌍 **90,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
-- 🧅 **Layered results** — when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows *both*: the service overlay **and** the underlying cloud infrastructure
+- 🧅 **Layered results** - when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows _both_: the service overlay **and** the underlying cloud infrastructure
 - 📊 **Rich metadata** including region, service, and provider-specific details
-- 💾 **Minimal memory footprint** — single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
+- 💾 **Minimal memory footprint** - single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
 - 🔧 **Dual interface** - HTTP API and CLI tool
 
 ## Supported Providers
@@ -81,6 +81,7 @@ You can also download and build separately:
 ```
 
 **Options for the update command:**
+
 - `--path <PATH>` - Output directory for downloaded files (default: `./data/raw`)
 - `--parallel <N>` - Number of concurrent downloads (default: 5)
 - `--auto-build` - Automatically build database after downloading
@@ -97,7 +98,7 @@ cloud infrastructure they run on top of (`service on cloud`).
 ./target/release/ipseek check 8.8.8.0
 # Output: 8.8.8.0 -> gcp (cloud)
 
-# A service running on a cloud — shows both layers
+# A service running on a cloud - shows both layers
 ./target/release/ipseek check 3.233.144.1
 # Output: 3.233.144.1 -> datadog (service · agents) on aws (cloud · us-east-1 · AMAZON)
 
@@ -129,15 +130,15 @@ The `data` object carries a backward-compatible **primary** match at the top
 level (`provider`, `prefix`, `region`, `service`, `metadata`, `kind`) plus two
 fields describing the full picture:
 
-- `summary` — a one-line human-readable description.
-- `layers` — every provider that claims the IP, ordered service-first
+- `summary` - a one-line human-readable description.
+- `layers` - every provider that claims the IP, ordered service-first
   (overlay) then cloud-last (infrastructure). Each layer has a `kind` of
   either `"service"` or `"cloud"`.
 
 Example requests:
 
 ```bash
-# A service on a cloud — Datadog hosted on AWS
+# A service on a cloud - Datadog hosted on AWS
 curl http://localhost:8080/3.233.144.1 | jq '.'
 ```
 
@@ -176,7 +177,7 @@ Response:
 ```
 
 ```bash
-# A plain cloud IP — single layer
+# A plain cloud IP - single layer
 curl http://localhost:8080/8.8.8.8 | jq '.'
 ```
 
@@ -194,9 +195,7 @@ Response:
     "kind": "cloud",
     "metadata": {},
     "summary": "gcp (cloud)",
-    "layers": [
-      { "provider": "gcp", "kind": "cloud", "prefix": "8.8.8.0/24" }
-    ]
+    "layers": [{ "provider": "gcp", "kind": "cloud", "prefix": "8.8.8.0/24" }]
   }
 }
 ```
