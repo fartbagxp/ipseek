@@ -17,37 +17,70 @@ const INITIAL_BACKOFF_MS: u64 = 1000;
 
 /// List of all IP range files to download from the repository
 const FILES_TO_DOWNLOAD: &[&str] = &[
+    // Cloud infrastructure
+    "asn-alibaba-as37963.json",
+    "asn-alibaba-as45102.json",
+    "asn-baidu-as38365.json",
+    "asn-huawei-as136907.json",
+    "asn-ovh-as16276.json",
+    "asn-ovh-as35540.json",
+    "asn-scaleway-as12876.json",
+    "asn-tencent-as132203.json",
+    "asn-tencent-as45090.json",
     "atlassian.json",
     "aws.json",
     "azure-china.json",
     "azure-germany.json",
     "azure-gov.json",
     "azure-public.json",
+    // CDN / delivery
+    "bunny-ipv4.json",
+    "bunny-ipv6.json",
+    "cachefly.txt",
     "cloudflare-ipv4.txt",
     "cloudflare-ipv6.txt",
     "datadog.json",
     "digitalocean.txt",
+    // SaaS / services
+    "docusign.json",
     "fastly.json",
+    "gcore.json",
     "gcp.json",
     "gcp.txt",
     "github.json",
+    "gitlab.json",
     "grafana-hosted-alerts.txt",
     "grafana-hosted-logs.txt",
     "grafana-hosted-metrics.txt",
     "grafana-hosted-traces.txt",
     "grafana-hosted.txt",
     "grafana-synthetic-monitoring.json",
+    "icloud-private-relay.csv",
+    "imperva.json",
     "iana-ipv4.csv",
     "iana-ipv6.csv",
     "linode.txt",
+    // Microsoft 365 regional variants
+    "m365-china.json",
+    "m365-usgov-dod.json",
+    "m365-usgov-gcchigh.json",
+    "m365-worldwide.json",
     "maxcdn.txt",
+    "mongodb-atlas.json",
+    "newrelic-synthetics.json",
     "okta.json",
     "oracle.json",
+    "pagerduty.json",
     "pingdom-ipv4.txt",
     "pingdom-ipv6.txt",
+    "salesforce.json",
     "seqera.json",
+    "starlink.csv",
     "stripe-api-ip-range.txt",
     "stripe-webhook-ip-range.txt",
+    "twilio-sip.json",
+    "vultr.json",
+    "webex.json",
     "zdxbeta.net-hub.json",
     "zdxcloud.net-hub.json",
     "zdxgov.net-hub.json",
@@ -318,6 +351,6 @@ mod tests {
     #[tokio::test]
     async fn test_file_list_not_empty() {
         assert!(!FILES_TO_DOWNLOAD.is_empty(), "File list should not be empty");
-        assert!(FILES_TO_DOWNLOAD.len() > 50, "Should have many files to download");
+        assert!(FILES_TO_DOWNLOAD.len() > 80, "Should have many files to download");
     }
 }

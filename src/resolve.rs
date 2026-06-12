@@ -28,6 +28,7 @@ pub fn canonical_provider(name: &str) -> String {
     let stopwords = [
         "ips", "ipv4", "ipv6", "v4", "v6", "ip", "iprange", "ip-range", "range", "ranges",
         "public", "hosted", "cdn", "api", "webhook", "prefixes", "prefix",
+        "sip", "synthetics", "atlas", "relay", "private",
     ];
     while tokens.len() > 1 {
         let last = *tokens.last().unwrap();
@@ -47,6 +48,26 @@ pub fn canonical_provider(name: &str) -> String {
 fn collapse_family(name: &str) -> String {
     if name.contains("zscaler") || name.contains("zscloud") || name.starts_with("zdx") {
         return "zscaler".to_string();
+    }
+    // asn-PROVIDER-asNNNN → PROVIDER  (e.g. asn-alibaba-as37963 → alibaba)
+    if let Some(rest) = name.strip_prefix("asn-") {
+        let provider: String = rest
+            .split('-')
+            .filter(|t| !(t.starts_with("as") && t[2..].chars().all(|c| c.is_ascii_digit())))
+            .collect::<Vec<_>>()
+            .join("-");
+        return if provider.is_empty() { rest.to_string() } else { provider };
+    }
+    // PROVIDER-asNNNN → PROVIDER  (e.g. hetzner-as24940 → hetzner)
+    if let Some(pos) = name.rfind('-') {
+        let tail = &name[pos + 1..];
+        if tail.starts_with("as") && tail[2..].chars().all(|c| c.is_ascii_digit()) {
+            return name[..pos].to_string();
+        }
+    }
+    // m365-china / m365-usgov-* / m365-worldwide → m365
+    if name.starts_with("m365") {
+        return "m365".to_string();
     }
     name.to_string()
 }
@@ -74,6 +95,7 @@ impl Kind {
 const CLOUD_PROVIDERS: &[&str] = &[
     "aws", "amazon", "azure", "gcp", "google", "oracle", "oci", "digitalocean",
     "linode", "vultr", "hetzner", "ovh", "ibm", "alibaba", "tencent", "scaleway",
+    "baidu", "huawei", "ionos",
 ];
 
 /// Classify a *canonical* provider token as cloud infrastructure or a service.
