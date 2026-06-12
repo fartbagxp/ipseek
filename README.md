@@ -5,7 +5,7 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 ## Features
 
 - 🚀 **Fast lookups** over a flat, in-memory longest-prefix table (no database)
-- 🌍 **90,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
+- 🌍 **390,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
 - 🧅 **Layered results** - when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows _both_: the service overlay **and** the underlying cloud infrastructure
 - 📊 **Rich metadata** including region, service, and provider-specific details
 - 💾 **Minimal memory footprint** - single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
@@ -13,7 +13,21 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 ## Supported Providers
 
-AWS, Azure (Public/China/Germany/Gov), GCP, GitHub, Cloudflare, DigitalOcean, Fastly, Datadog, Atlassian, Oracle, Stripe, Zoom, Zscaler, Grafana, Linode, MaxCDN, Okta, Pingdom, Seqera, and more.
+| Category | Providers |
+|---|---|
+| **Cloud** | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
+| **CDN** | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN |
+| **Security** | Zscaler, Imperva |
+| **Observability** | Datadog, Grafana, New Relic, Pingdom |
+| **Identity** | Okta |
+| **Collaboration** | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh) |
+| **Payments** | Stripe |
+| **CRM / Docs** | Salesforce, DocuSign |
+| **Ops / Alerting** | PagerDuty, Twilio (SIP) |
+| **Database** | MongoDB Atlas |
+| **Privacy** | iCloud Private Relay |
+| **ISP** | Starlink |
+| **Other** | Seqera |
 
 ## Installation
 
@@ -66,7 +80,7 @@ The easiest way to get started is to download IP range files and build the datab
 ./target/release/ipseek update --auto-build
 ```
 
-This downloads 56 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~3 MB, ~90k ranges).
+This downloads 85 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~390k ranges).
 
 **Alternative: Manual Workflow**
 

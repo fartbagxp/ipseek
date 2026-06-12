@@ -169,6 +169,32 @@ fn parse_json(val: &Value, sink: &mut Sink) {
         }
     }
 
+    // M365: { "endpoints": [{ "serviceArea": "Exchange", "ips": [...] }] }
+    if let Some(endpoints) = val.get("endpoints").and_then(|v| v.as_array()) {
+        for ep in endpoints {
+            if let Some(ips) = ep.get("ips").and_then(|v| v.as_array()) {
+                let service = ep.get("serviceArea").and_then(|v| v.as_str()).map(String::from);
+                for p in ips.iter().filter_map(|x| x.as_str()) {
+                    sink.push(p, None, service.clone(), HashMap::new());
+                }
+            }
+        }
+    }
+
+    // Vultr: { "subnets": [{ "ip_prefix": "...", "alpha2code": "JP", "region": "JP-13" }] }
+    if let Some(subnets) = val.get("subnets").and_then(|v| v.as_array()) {
+        for s in subnets {
+            if let Some(pref) = s.get("ip_prefix").and_then(|v| v.as_str()) {
+                let region = s
+                    .get("alpha2code")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| s.get("region").and_then(|v| v.as_str()))
+                    .map(String::from);
+                sink.push(pref, region, None, HashMap::new());
+            }
+        }
+    }
+
     // GitHub: top-level service arrays of CIDR strings.
     // Datadog: top-level objects { "prefixes_ipv4": [...], "prefixes_ipv6": [...] }.
     // Seqera: { "egress": [...], "ingress": [...] }.
@@ -275,7 +301,10 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
         };
         // IANA registry CSVs map /8s to RIRs, not to providers — skip them so
         // results stay focused on actual cloud providers and services.
-        if !name.ends_with(".json") && !name.ends_with(".txt") {
+        if !name.ends_with(".json") && !name.ends_with(".txt") && !name.ends_with(".csv") {
+            continue;
+        }
+        if name == "iana-ipv4.csv" || name == "iana-ipv6.csv" {
             continue;
         }
 
@@ -286,6 +315,7 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
         let provider = name
             .trim_end_matches(".json")
             .trim_end_matches(".txt")
+            .trim_end_matches(".csv")
             .to_string();
 
         let mut sink = Sink {
@@ -305,6 +335,7 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
             }
         } else {
             // Plain text / CSV: one prefix per line, first comma-field for CSV.
+            // Header rows (non-IP first field) are silently ignored by normalize_ip_prefix.
             for line in text.lines() {
                 let l = line.trim();
                 if l.is_empty() || l.starts_with('#') {
