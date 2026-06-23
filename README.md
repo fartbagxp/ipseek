@@ -13,21 +13,22 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 ## Supported Providers
 
-| Category          | Providers                                                                                                        |
-|-------------------|------------------------------------------------------------------------------------------------------------------|
-| **Cloud**         | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
-| **CDN**           | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN                                                          |
-| **Security**      | Zscaler, Imperva                                                                                                 |
-| **Observability** | Datadog, Grafana, New Relic, Pingdom                                                                             |
-| **Identity**      | Okta                                                                                                             |
-| **Collaboration** | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh)     |
-| **Payments**       | Stripe                                                                                                           |
-| **CRM / Docs**     | Salesforce, DocuSign                                                                                             |
-| **Ops / Alerting** | PagerDuty, Twilio (SIP)                                                                                          |
-| **Database**       | MongoDB Atlas                                                                                                    |
-| **Privacy**        | iCloud Private Relay                                                                                             |
-| **ISP**            | Starlink                                                                                                         |
-| **Other**          | Seqera                                                                                                           |
+| Category                 | Providers                                                                                                                        |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| **Cloud**                | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
+| **CDN**                  | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN                                                                          |
+| **Security**             | Zscaler, Imperva                                                                                                                 |
+| **Observability**        | Datadog, Grafana, New Relic, Pingdom                                                                                             |
+| **Identity**             | Okta                                                                                                                             |
+| **Collaboration**        | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh)                     |
+| **Payments**             | Stripe                                                                                                                           |
+| **CRM / Docs**           | Salesforce, DocuSign                                                                                                             |
+| **Ops / Alerting**       | PagerDuty, Twilio (SIP)                                                                                                          |
+| **Database**             | MongoDB Atlas                                                                                                                    |
+| **Privacy**              | iCloud Private Relay                                                                                                             |
+| **ISP**                  | Starlink                                                                                                                         |
+| **Other**                | Seqera                                                                                                                           |
+| **Government & Health**  | US Federal, State & City Government; Health IT Vendors; Hospital Systems; Health Insurance; Pharmacy Benefit Managers; Academics  |
 
 ## Installation
 
@@ -80,7 +81,7 @@ The easiest way to get started is to download IP range files and build the datab
 ./target/release/ipseek update --auto-build
 ```
 
-This downloads 85 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~390k ranges).
+This downloads 85 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~390k ranges). Additional IP ranges for US government and health organizations are sourced from [gov-domains](https://github.com/fartbagxp/gov-domains) ASN data via `--gov-asn-path`.
 
 **Alternative: Manual Workflow**
 
@@ -94,11 +95,16 @@ You can also download and build separately:
 ./target/release/ipseek update-local --path ./data/raw
 ```
 
-**Options for the update command:**
+**Options for `update`:**
 
 - `--path <PATH>` - Output directory for downloaded files (default: `./data/raw`)
 - `--parallel <N>` - Number of concurrent downloads (default: 5)
 - `--auto-build` - Automatically build database after downloading
+
+**Options for `update-local`:**
+
+- `--path <PATH>` - Directory of local provider files (default: `./data/raw`)
+- `--gov-asn-path <PATH>` - Optional path to a [gov-domains](https://github.com/fartbagxp/gov-domains) `data/asn/` directory to include US government and health organization IP ranges
 
 ### 2. CLI Usage
 
@@ -249,6 +255,9 @@ ipseek update --path ./data/raw
 # Build database from local files
 ipseek update-local --path ./data/raw
 
+# Build database and include gov-domains ASN data
+ipseek update-local --path ./data/raw --gov-asn-path /path/to/gov-domains/data/asn
+
 # Check a single IP
 ipseek check <IP_ADDRESS>
 
@@ -265,7 +274,7 @@ The application is designed for minimal memory usage on fly.io:
 
 1. Database is loaded once on startup
 2. All lookups use in-memory trie structure
-3. Gzip compression keeps database size small (~3 MB)
+3. Gzip compression keeps database size small (~0 MB)
 4. Supports auto-stop/start machines
 
 See `fly.toml` for deployment configuration.
@@ -321,6 +330,30 @@ To run only the gov-domains ASN category tests:
 ```bash
 cargo test test_gov_asn
 ```
+
+### Updating README Stats
+
+After downloading fresh source data, run `scripts/update_readme.py` to rebuild
+the database and sync the IP range counts and DB size into README.md:
+
+```bash
+# Cloud providers only
+python3 scripts/update_readme.py --data-dir ./data/raw
+
+# Cloud providers + gov-domains ASN data
+python3 scripts/update_readme.py \
+  --data-dir ./data/raw \
+  --gov-asn-path /path/to/gov-domains/data/asn
+```
+
+The script rebuilds the release binary if needed, runs `update-local`, then
+patches these four values in-place:
+
+| Placeholder    | What it tracks                                    |
+|----------------|---------------------------------------------------|
+| `N+ IP ranges` | Total unique prefixes across all sources          |
+| `~Nk ranges`   | Same count, rounded to thousands                  |
+| `~N MB`        | Compressed db.bin size on disk                    |
 
 ### Adding New Providers
 
