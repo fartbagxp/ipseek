@@ -331,30 +331,6 @@ To run only the gov-domains ASN category tests:
 cargo test test_gov_asn
 ```
 
-### Updating README Stats
-
-After downloading fresh source data, run `scripts/update_readme.py` to rebuild
-the database and sync the IP range counts and DB size into README.md:
-
-```bash
-# Cloud providers only
-python3 scripts/update_readme.py --data-dir ./data/raw
-
-# Cloud providers + gov-domains ASN data
-python3 scripts/update_readme.py \
-  --data-dir ./data/raw \
-  --gov-asn-path /path/to/gov-domains/data/asn
-```
-
-The script rebuilds the release binary if needed, runs `update-local`, then
-patches these four values in-place:
-
-| Placeholder    | What it tracks                                    |
-|----------------|---------------------------------------------------|
-| `N+ IP ranges` | Total unique prefixes across all sources          |
-| `~Nk ranges`   | Same count, rounded to thousands                  |
-| `~N MB`        | Compressed db.bin size on disk                    |
-
 ### Adding New Providers
 
 1. Add provider IP range file to `data/raw/`
