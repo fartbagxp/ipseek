@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -125,7 +125,10 @@ impl DownloadStats {
         println!("  Failed:  {}", self.failed.len());
 
         if !self.failed.is_empty() {
-            eprintln!("\nWarning: {} file(s) failed to download:", self.failed.len());
+            eprintln!(
+                "\nWarning: {} file(s) failed to download:",
+                self.failed.len()
+            );
             for (file, err) in &self.failed {
                 eprintln!("  - {}: {}", file, err);
             }
@@ -199,12 +202,10 @@ pub async fn run_download(output_dir: &str, parallel: usize) -> Result<DownloadS
 
     for task in tasks {
         match task.await {
-            Ok((filename, result)) => {
-                match result {
-                    Ok(_) => succeeded += 1,
-                    Err(e) => failed.push((filename, e.to_string())),
-                }
-            }
+            Ok((filename, result)) => match result {
+                Ok(_) => succeeded += 1,
+                Err(e) => failed.push((filename, e.to_string())),
+            },
             Err(e) => {
                 eprintln!("Task error: {}", e);
             }
@@ -233,11 +234,7 @@ pub async fn run_download(output_dir: &str, parallel: usize) -> Result<DownloadS
 /// * `url` - URL to download from
 /// * `dest_path` - Destination file path
 /// * `max_retries` - Maximum number of retry attempts
-async fn download_file_with_retry(
-    url: String,
-    dest_path: PathBuf,
-    max_retries: u32,
-) -> Result<()> {
+async fn download_file_with_retry(url: String, dest_path: PathBuf, max_retries: u32) -> Result<()> {
     let mut last_error = None;
 
     for attempt in 0..max_retries {
@@ -350,7 +347,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_list_not_empty() {
-        assert!(!FILES_TO_DOWNLOAD.is_empty(), "File list should not be empty");
-        assert!(FILES_TO_DOWNLOAD.len() > 80, "Should have many files to download");
+        assert!(
+            !FILES_TO_DOWNLOAD.is_empty(),
+            "File list should not be empty"
+        );
+        assert!(
+            FILES_TO_DOWNLOAD.len() > 80,
+            "Should have many files to download"
+        );
     }
 }

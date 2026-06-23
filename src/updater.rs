@@ -88,9 +88,15 @@ fn parse_json(val: &Value, sink: &mut Sink) {
     // AWS / GCP: { "prefixes": [{ ip_prefix|ipv4_prefix|ipv4Prefix|ipv6Prefix, ... }] }
     if let Some(arr) = val.get("prefixes").and_then(|v| v.as_array()) {
         for obj in arr {
-            let pref = ["ip_prefix", "ipv4_prefix", "ipv4Prefix", "ipv6_prefix", "ipv6Prefix"]
-                .iter()
-                .find_map(|k| str_of(obj, k));
+            let pref = [
+                "ip_prefix",
+                "ipv4_prefix",
+                "ipv4Prefix",
+                "ipv6_prefix",
+                "ipv6Prefix",
+            ]
+            .iter()
+            .find_map(|k| str_of(obj, k));
             if let Some(pref) = pref {
                 let region = str_of(obj, "region").or_else(|| str_of(obj, "scope"));
                 let service = str_of(obj, "service");
@@ -173,7 +179,10 @@ fn parse_json(val: &Value, sink: &mut Sink) {
     if let Some(endpoints) = val.get("endpoints").and_then(|v| v.as_array()) {
         for ep in endpoints {
             if let Some(ips) = ep.get("ips").and_then(|v| v.as_array()) {
-                let service = ep.get("serviceArea").and_then(|v| v.as_str()).map(String::from);
+                let service = ep
+                    .get("serviceArea")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 for p in ips.iter().filter_map(|x| x.as_str()) {
                     sink.push(p, None, service.clone(), HashMap::new());
                 }
@@ -280,7 +289,106 @@ fn collect_any_cidr(val: &Value, sink: &mut Sink) {
     }
 }
 
-pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
+fn gov_asn_category(filename: &str) -> &str {
+    match filename {
+        "fed-gov-prefixes.csv" => "US Federal Government",
+        "state-gov-prefixes.csv" => "US State Government",
+        "city-gov-prefixes.csv" => "US City Government",
+        "health-it-prefixes.csv" => "US Health IT Vendors",
+        "hospitals-prefixes.csv" => "US Hospital Systems",
+        "insurance-prefixes.csv" => "US Health Insurance",
+        "pbm-prefixes.csv" => "US Pharmacy Benefit Managers",
+        "academic-prefixes.csv" => "US Academic Institutions",
+        _ => filename,
+    }
+}
+
+fn ingest_gov_asn_dir(
+    asn_dir: &str,
+    stored_entries: &mut Vec<StoredEntry>,
+    stored_files: &mut Vec<StoredFile>,
+) -> Result<()> {
+    let path = std::path::Path::new(asn_dir);
+    if !path.exists() {
+        anyhow::bail!("gov-asn directory does not exist: {}", asn_dir);
+    }
+
+    for entry in std::fs::read_dir(path).context("reading gov-asn directory")? {
+        let entry = entry?;
+        let file_path = entry.path();
+        if !file_path.is_file() {
+            continue;
+        }
+        let name = match file_path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if n.ends_with(".csv") => n.to_string(),
+            _ => continue,
+        };
+
+        let category = gov_asn_category(&name).to_string();
+        log::info!("Processing gov-asn file: {} ({})", name, category);
+
+        let text = std::fs::read_to_string(&file_path)
+            .with_context(|| format!("reading file {}", name))?;
+
+        let mut prefixes: Vec<String> = Vec::new();
+        let mut count = 0usize;
+
+        for line in text.lines() {
+            let l = line.trim();
+            if l.is_empty() {
+                continue;
+            }
+            // Schema: abbreviation,agency,asn,prefix,ip_version,...
+            let cols: Vec<&str> = l.splitn(6, ',').collect();
+            if cols.len() < 4 {
+                continue;
+            }
+            let abbreviation = cols[0].trim();
+            let agency = cols[1].trim();
+            let asn = cols[2].trim();
+            let prefix_raw = cols[3].trim();
+
+            if let Some(prefix) = normalize_ip_prefix(prefix_raw) {
+                let mut metadata = HashMap::new();
+                if !abbreviation.is_empty() {
+                    metadata.insert("abbreviation".to_string(), abbreviation.to_string());
+                }
+                if !asn.is_empty() {
+                    metadata.insert("asn".to_string(), asn.to_string());
+                }
+                stored_entries.push(StoredEntry {
+                    prefix: prefix.clone(),
+                    provider: category.clone(),
+                    region: None,
+                    service: if agency.is_empty() {
+                        None
+                    } else {
+                        Some(agency.to_string())
+                    },
+                    metadata: Metadata { fields: metadata },
+                });
+                prefixes.push(prefix);
+                count += 1;
+            }
+        }
+
+        if count == 0 {
+            log::warn!("No prefixes parsed from gov-asn file {}", name);
+        } else {
+            println!("  {} prefixes from {} ({})", count, name, category);
+        }
+
+        stored_files.push(StoredFile {
+            name: name.clone(),
+            content: text,
+            prefixes,
+        });
+    }
+
+    Ok(())
+}
+
+pub fn run_update_from_local(data_dir: &str, gov_asn_path: Option<&str>) -> Result<DbFile> {
     let path = std::path::Path::new(data_dir);
     if !path.exists() {
         anyhow::bail!("Directory does not exist: {}", data_dir);
@@ -355,6 +463,11 @@ pub fn run_update_from_local(data_dir: &str) -> Result<DbFile> {
             content: text,
             prefixes,
         });
+    }
+
+    if let Some(asn_dir) = gov_asn_path {
+        println!("Ingesting gov-asn prefixes from {}...", asn_dir);
+        ingest_gov_asn_dir(asn_dir, &mut stored_entries, &mut stored_files)?;
     }
 
     // Dedupe by (prefix, provider) so cross-provider overlaps are preserved,

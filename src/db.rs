@@ -3,7 +3,9 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Default, Archive, RkyvSerialize, RkyvDeserialize,
+)]
 pub struct Metadata {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub fields: HashMap<String, String>,

@@ -1,12 +1,12 @@
 mod db;
 mod downloader;
-mod updater;
 mod lookup;
 mod resolve;
 mod server;
+mod updater;
 
-use clap::{Parser, Subcommand};
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 use db::save_db;
 
 #[derive(Parser)]
@@ -31,7 +31,13 @@ enum Commands {
         auto_build: bool,
     },
     /// Build local DB from data/raw directory
-    UpdateLocal { #[arg(long, default_value = "./data/raw")] path: String },
+    UpdateLocal {
+        #[arg(long, default_value = "./data/raw")]
+        path: String,
+        /// Path to gov-domains data/asn directory to include government/health org prefixes
+        #[arg(long)]
+        gov_asn_path: Option<String>,
+    },
     /// Check a single IP address against the local DB
     Check { ip: String },
     /// Run HTTP server
@@ -44,20 +50,24 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Update { path, parallel, auto_build } => {
+        Commands::Update {
+            path,
+            parallel,
+            auto_build,
+        } => {
             println!("Downloading IP range files to {}", path);
             let stats = downloader::run_download(&path, parallel).await?;
 
             if stats.succeeded > 0 && auto_build {
                 println!("\nBuilding database...");
-                let db = updater::run_update_from_local(&path)?;
+                let db = updater::run_update_from_local(&path, None)?;
                 save_db(&db, &cli.db)?;
                 println!("Database built successfully: {}", cli.db);
             }
         }
-        Commands::UpdateLocal { path } => {
+        Commands::UpdateLocal { path, gov_asn_path } => {
             println!("Running local update from {} -> {}", path, cli.db);
-            let db = updater::run_update_from_local(&path)?;
+            let db = updater::run_update_from_local(&path, gov_asn_path.as_deref())?;
             save_db(&db, &cli.db)?;
             println!("local update completed. DB written to {}", cli.db);
         }
@@ -76,7 +86,12 @@ async fn main() -> Result<()> {
 
             // start server with state extension
             let app = axum::Router::new()
-                .route("/", axum::routing::get(|| async { "Hello to IP Seek! Append your IP to the URL to use this service." }))
+                .route(
+                    "/",
+                    axum::routing::get(|| async {
+                        "Hello to IP Seek! Append your IP to the URL to use this service."
+                    }),
+                )
                 .route("/{ip}", axum::routing::get(server::check_ip))
                 .layer(axum::extract::Extension(state));
 
