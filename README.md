@@ -13,21 +13,21 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 ## Supported Providers
 
-| Category | Providers |
-|---|---|
-| **Cloud** | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
-| **CDN** | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN |
-| **Security** | Zscaler, Imperva |
-| **Observability** | Datadog, Grafana, New Relic, Pingdom |
-| **Identity** | Okta |
-| **Collaboration** | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh) |
-| **Payments** | Stripe |
-| **CRM / Docs** | Salesforce, DocuSign |
-| **Ops / Alerting** | PagerDuty, Twilio (SIP) |
-| **Database** | MongoDB Atlas |
-| **Privacy** | iCloud Private Relay |
-| **ISP** | Starlink |
-| **Other** | Seqera |
+| Category          | Providers                                                                                                        |
+|-------------------|------------------------------------------------------------------------------------------------------------------|
+| **Cloud**         | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
+| **CDN**           | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN                                                          |
+| **Security**      | Zscaler, Imperva                                                                                                 |
+| **Observability** | Datadog, Grafana, New Relic, Pingdom                                                                             |
+| **Identity**      | Okta                                                                                                             |
+| **Collaboration** | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh)     |
+| **Payments**       | Stripe                                                                                                           |
+| **CRM / Docs**     | Salesforce, DocuSign                                                                                             |
+| **Ops / Alerting** | PagerDuty, Twilio (SIP)                                                                                          |
+| **Database**       | MongoDB Atlas                                                                                                    |
+| **Privacy**        | iCloud Private Relay                                                                                             |
+| **ISP**            | Starlink                                                                                                         |
+| **Other**          | Seqera                                                                                                           |
 
 ## Installation
 
@@ -281,6 +281,46 @@ See `fly.toml` for deployment configuration.
 - `src/lookup.rs` - CLI lookup logic with LPM (Longest Prefix Match)
 - `src/server.rs` - HTTP server and API handlers
 - `data/raw/` - Cloud provider IP range files (JSON/TXT)
+
+### Pre-commit Hooks
+
+Install [pre-commit](https://pre-commit.com/#install), then install the hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+The hooks run automatically on `git commit`. To run them manually against all files:
+
+```bash
+pre-commit run --all-files
+```
+
+Hooks configured:
+
+| Hook                    | What it does                                              |
+|-------------------------|-----------------------------------------------------------|
+| `trailing-whitespace`   | Strips trailing whitespace                                |
+| `end-of-file-fixer`     | Ensures files end with a newline                          |
+| `check-yaml`            | Validates YAML syntax                                     |
+| `check-toml`            | Validates TOML syntax (`Cargo.toml`, etc.)                |
+| `check-merge-conflict`  | Rejects leftover merge conflict markers                   |
+| `fmt`                   | Runs `cargo fmt` — enforces Rust formatting               |
+| `cargo-check`           | Runs `cargo check` — catches compile errors before commit |
+| `gitleaks`              | Scans for secrets and credentials in staged changes       |
+
+### Running Tests
+
+```bash
+cargo test
+```
+
+To run only the gov-domains ASN category tests:
+
+```bash
+cargo test test_gov_asn
+```
 
 ### Adding New Providers
 

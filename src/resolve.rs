@@ -26,9 +26,28 @@ pub fn canonical_provider(name: &str) -> String {
         .filter(|t| !t.is_empty())
         .collect();
     let stopwords = [
-        "ips", "ipv4", "ipv6", "v4", "v6", "ip", "iprange", "ip-range", "range", "ranges",
-        "public", "hosted", "cdn", "api", "webhook", "prefixes", "prefix",
-        "sip", "synthetics", "atlas", "relay", "private",
+        "ips",
+        "ipv4",
+        "ipv6",
+        "v4",
+        "v6",
+        "ip",
+        "iprange",
+        "ip-range",
+        "range",
+        "ranges",
+        "public",
+        "hosted",
+        "cdn",
+        "api",
+        "webhook",
+        "prefixes",
+        "prefix",
+        "sip",
+        "synthetics",
+        "atlas",
+        "relay",
+        "private",
     ];
     while tokens.len() > 1 {
         let last = *tokens.last().unwrap();
@@ -56,7 +75,11 @@ fn collapse_family(name: &str) -> String {
             .filter(|t| !(t.starts_with("as") && t[2..].chars().all(|c| c.is_ascii_digit())))
             .collect::<Vec<_>>()
             .join("-");
-        return if provider.is_empty() { rest.to_string() } else { provider };
+        return if provider.is_empty() {
+            rest.to_string()
+        } else {
+            provider
+        };
     }
     // PROVIDER-asNNNN → PROVIDER  (e.g. hetzner-as24940 → hetzner)
     if let Some(pos) = name.rfind('-') {
@@ -93,9 +116,25 @@ impl Kind {
 /// Provider tokens that represent cloud / hosting infrastructure (IaaS).
 /// Anything not listed here is treated as a service overlay.
 const CLOUD_PROVIDERS: &[&str] = &[
-    "aws", "amazon", "azure", "gcp", "google", "oracle", "oci", "digitalocean",
-    "linode", "vultr", "hetzner", "ovh", "ibm", "alibaba", "tencent", "scaleway",
-    "baidu", "huawei", "ionos",
+    "aws",
+    "amazon",
+    "azure",
+    "gcp",
+    "google",
+    "oracle",
+    "oci",
+    "digitalocean",
+    "linode",
+    "vultr",
+    "hetzner",
+    "ovh",
+    "ibm",
+    "alibaba",
+    "tencent",
+    "scaleway",
+    "baidu",
+    "huawei",
+    "ionos",
 ];
 
 /// Classify a *canonical* provider token as cloud infrastructure or a service.
