@@ -5,7 +5,7 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 ## Features
 
 - 🚀 **Fast lookups** over a flat, in-memory longest-prefix table (no database)
-- 🌍 **390,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
+- 🌍 **400,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
 - 🧅 **Layered results** - when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows _both_: the service overlay **and** the underlying cloud infrastructure
 - 📊 **Rich metadata** including region, service, and provider-specific details
 - 💾 **Minimal memory footprint** - single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
@@ -13,22 +13,24 @@ A fast, memory-efficient Rust application for identifying cloud providers, regio
 
 ## Supported Providers
 
-| Category                 | Providers                                                                                                                        |
-|--------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| **Cloud**                | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS |
-| **CDN**                  | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN                                                                          |
-| **Security**             | Zscaler, Imperva                                                                                                                 |
-| **Observability**        | Datadog, Grafana, New Relic, Pingdom                                                                                             |
-| **Identity**             | Okta                                                                                                                             |
-| **Collaboration**        | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh)                     |
-| **Payments**             | Stripe                                                                                                                           |
-| **CRM / Docs**           | Salesforce, DocuSign                                                                                                             |
-| **Ops / Alerting**       | PagerDuty, Twilio (SIP)                                                                                                          |
-| **Database**             | MongoDB Atlas                                                                                                                    |
-| **Privacy**              | iCloud Private Relay                                                                                                             |
-| **ISP**                  | Starlink                                                                                                                         |
-| **Other**                | Seqera                                                                                                                           |
-| **Government & Health**  | US Federal, State & City Government; Health IT Vendors; Hospital Systems; Health Insurance; Pharmacy Benefit Managers; Academics  |
+| Category                | Providers                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cloud**               | AWS, Azure (Public/China/Germany/Gov), GCP, Oracle, DigitalOcean, Linode, Vultr, Alibaba Cloud, Tencent Cloud, Baidu Cloud, Huawei Cloud, OVH, Scaleway, IONOS, Hetzner |
+| **CDN**                 | Cloudflare, Fastly, BunnyCDN, G-Core, CacheFly, MaxCDN                                                                                                                  |
+| **Security**            | Zscaler, Imperva                                                                                                                                                        |
+| **Observability**       | Datadog, Grafana, New Relic, Pingdom, StatusCake                                                                                                                        |
+| **Identity**            | Okta                                                                                                                                                                    |
+| **Collaboration**       | GitHub, GitLab, Atlassian (Jira/Confluence), Zoom, Webex, Microsoft 365 (Worldwide/China/USGov-DoD/GCCHigh), Telegram                                                   |
+| **Payments**            | Stripe                                                                                                                                                                  |
+| **CRM / Docs**          | Salesforce, DocuSign                                                                                                                                                    |
+| **Ops / Alerting**      | PagerDuty, Twilio (SIP)                                                                                                                                                 |
+| **Database**            | MongoDB Atlas                                                                                                                                                           |
+| **Privacy**             | iCloud Private Relay                                                                                                                                                    |
+| **ISP**                 | Starlink                                                                                                                                                                |
+| **DNS**                 | Public DNS resolvers (Cloudflare, Google, Quad9, and more)                                                                                                              |
+| **AI Crawlers / Bots**  | OpenAI (GPTBot, ChatGPT-User, SearchBot), Bingbot, DuckDuckGo (DuckDuckBot, DuckAssistBot), Perplexity                                                                  |
+| **Other**               | Seqera                                                                                                                                                                  |
+| **Government & Health** | US Federal, State & City Government; Health IT Vendors; Hospital Systems; Health Insurance; Pharmacy Benefit Managers; Academics                                        |
 
 ## Installation
 
@@ -81,7 +83,7 @@ The easiest way to get started is to download IP range files and build the datab
 ./target/release/ipseek update --auto-build
 ```
 
-This downloads 85 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~390k ranges). Additional IP ranges for US government and health organizations are sourced from [gov-domains](https://github.com/fartbagxp/gov-domains) ASN data via `--gov-asn-path`.
+This downloads 98 provider files from [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) and creates a compressed `db.bin` database (~406k ranges). Additional IP ranges for US government and health organizations are sourced from [gov-domains](https://github.com/fartbagxp/gov-domains) ASN data via `--gov-asn-path`.
 
 **Alternative: Manual Workflow**
 
@@ -308,16 +310,16 @@ pre-commit run --all-files
 
 Hooks configured:
 
-| Hook                    | What it does                                              |
-|-------------------------|-----------------------------------------------------------|
-| `trailing-whitespace`   | Strips trailing whitespace                                |
-| `end-of-file-fixer`     | Ensures files end with a newline                          |
-| `check-yaml`            | Validates YAML syntax                                     |
-| `check-toml`            | Validates TOML syntax (`Cargo.toml`, etc.)                |
-| `check-merge-conflict`  | Rejects leftover merge conflict markers                   |
-| `fmt`                   | Runs `cargo fmt` — enforces Rust formatting               |
-| `cargo-check`           | Runs `cargo check` — catches compile errors before commit |
-| `gitleaks`              | Scans for secrets and credentials in staged changes       |
+| Hook                   | What it does                                              |
+| ---------------------- | --------------------------------------------------------- |
+| `trailing-whitespace`  | Strips trailing whitespace                                |
+| `end-of-file-fixer`    | Ensures files end with a newline                          |
+| `check-yaml`           | Validates YAML syntax                                     |
+| `check-toml`           | Validates TOML syntax (`Cargo.toml`, etc.)                |
+| `check-merge-conflict` | Rejects leftover merge conflict markers                   |
+| `fmt`                  | Runs `cargo fmt` — enforces Rust formatting               |
+| `cargo-check`          | Runs `cargo check` — catches compile errors before commit |
+| `gitleaks`             | Scans for secrets and credentials in staged changes       |
 
 ### Running Tests
 
