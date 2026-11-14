@@ -1,15 +1,21 @@
-# IP Seek
+# IPSeek
 
-A fast, memory-efficient Rust application for identifying cloud providers, regions, and services from IP addresses. Designed for deployment on fly.io with minimal resource usage.
+[IPSeek](https://ipseek.fly.dev) gives you information about whether a IP address belongs to: which cloud, which region, and which service is running on it.
 
-## Features
+I use it by going to [https://ipseek.fly.dev/3.233.144.1](https://ipseek.fly.dev/3.233.144.1) and adding an IP address in the end of the URL and get a JSON back.
 
-- 🚀 **Fast lookups** over a flat, in-memory longest-prefix table (no database)
-- 🌍 **400,000+ IP ranges** from major cloud providers and services (AWS, Azure, GCP, GitHub, Cloudflare, Fastly, Datadog, Stripe, Okta, Oracle, Zscaler, and more)
-- 🧅 **Layered results** - when a service runs on top of a cloud (e.g. Stripe on AWS), the answer shows _both_: the service overlay **and** the underlying cloud infrastructure
-- 📊 **Rich metadata** including region, service, and provider-specific details
-- 💾 **Minimal memory footprint** - single gzip-compressed flat-file database (`db.bin`), embedded in the binary; no external store
-- 🔧 **Dual interface** - HTTP API and CLI tool
+Most of these companies publish their IP ranges, but each one uses its own format at its own URL, and the lists change constantly. [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) collects them. I load them into a single table and answers lookups against it using IPSeek. When a service runs on someone else's cloud, which is common for Software-as-a-Service providers, it reports both instead of picking one:
+
+```bash
+3.233.144.1 -> datadog (service · agents) on aws (cloud · us-east-1 · AMAZON)
+```
+
+## What IPSeek Covers
+
+- Covers 400,000+ ranges from cloud providers, CDNs, SaaS products, crawlers, and US government and health networks. The full list is below.
+- Returns region, service, and provider-specific metadata where the source publishes it.
+- Runs as a CLI (`ipseek check`) or an HTTP API (`ipseek serve`).
+- Keeps everything in memory. The ranges are stored in one gzip-compressed file (`db.bin`) and searched with longest-prefix match. There's no database server, so it runs comfortably on a small fly.io machine.
 
 ## Supported Providers
 
@@ -44,7 +50,7 @@ Download the latest release for your platform from [GitHub Releases](https://git
 - **macOS ARM64**: `ipseek-macos-aarch64` (Apple Silicon)
 - **Windows x86_64**: `ipseek-windows-x86_64.exe`
 
-**Verify the download:**
+**Verify the Download:**
 
 ```bash
 # Download binary and checksum (use latest weekly release: YYYY.MM.DD)
@@ -272,26 +278,24 @@ ipseek --db /path/to/db.bin serve
 
 ## Deployment on fly.io
 
-The application is designed for minimal memory usage on fly.io:
+The public instance at [ipseek.fly.dev](https://ipseek.fly.dev) runs on a single shared-CPU, 512 MB machine. The Docker build downloads the latest ranges, builds `db.bin`, and copies it into the runtime image. The server loads it once at startup, and every lookup after that runs in memory. Machines auto-stop when idle and start again on the next request, so the first request after a quiet period is slower.
 
-1. Database is loaded once on startup
-2. All lookups use in-memory trie structure
-3. Gzip compression keeps database size small (~0 MB)
-4. Supports auto-stop/start machines
-
-See `fly.toml` for deployment configuration.
+See `fly.toml` and `Dockerfile` for the configuration.
 
 ## Development
 
 ### Project Structure
 
 - `src/main.rs` - CLI argument parsing and command routing
+- `src/lib.rs` - Library crate root, used by the integration tests
 - `src/downloader.rs` - Download IP range files from GitHub
 - `src/db.rs` - Database serialization/deserialization
 - `src/updater.rs` - Parse provider files and build database
 - `src/lookup.rs` - CLI lookup logic with LPM (Longest Prefix Match)
+- `src/resolve.rs` - Turns matching ranges into the layered service-on-cloud answer
 - `src/server.rs` - HTTP server and API handlers
-- `data/raw/` - Cloud provider IP range files (JSON/TXT)
+- `tests/check_ip.rs` - Integration tests
+- `data/raw/` - Downloaded provider IP range files (JSON/TXT), created by `ipseek update`
 
 ### Pre-commit Hooks
 
@@ -308,18 +312,36 @@ The hooks run automatically on `git commit`. To run them manually against all fi
 pre-commit run --all-files
 ```
 
+To update pre-commit dependencies
+
+```bash
+pre-commit autoupdate --freeze
+```
+
 Hooks configured:
 
-| Hook                   | What it does                                              |
-| ---------------------- | --------------------------------------------------------- |
-| `trailing-whitespace`  | Strips trailing whitespace                                |
-| `end-of-file-fixer`    | Ensures files end with a newline                          |
-| `check-yaml`           | Validates YAML syntax                                     |
-| `check-toml`           | Validates TOML syntax (`Cargo.toml`, etc.)                |
-| `check-merge-conflict` | Rejects leftover merge conflict markers                   |
-| `fmt`                  | Runs `cargo fmt` — enforces Rust formatting               |
-| `cargo-check`          | Runs `cargo check` — catches compile errors before commit |
-| `gitleaks`             | Scans for secrets and credentials in staged changes       |
+| Hook                   | What it does                                             |
+| ---------------------- | -------------------------------------------------------- |
+| `trailing-whitespace`  | Strips trailing whitespace                               |
+| `end-of-file-fixer`    | Ensures files end with a newline                         |
+| `check-yaml`           | Validates YAML syntax                                    |
+| `check-toml`           | Validates TOML syntax (`Cargo.toml`, etc.)               |
+| `check-merge-conflict` | Rejects leftover merge conflict markers                  |
+| `fmt`                  | Runs `cargo fmt` to enforce Rust formatting              |
+| `cargo-check`          | Runs `cargo check` to catch compile errors before commit |
+| `gitleaks`             | Scans for secrets and credentials in staged changes      |
+
+### Cargo Dependencies
+
+Install [cargo outdated](https://github.com/kbknapp/cargo-outdated), then:
+
+```bash
+cargo outdated -R   # list outdated direct dependencies
+cargo update        # apply semver-compatible updates (rewrites Cargo.lock only)
+cargo test
+```
+
+Anything with `---` in the Compat column is a breaking upgrade. Bump its version in `Cargo.toml` by hand, check the crate's changelog for renamed features or APIs, and test again.
 
 ### Running Tests
 
