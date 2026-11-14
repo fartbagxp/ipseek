@@ -16,7 +16,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
+      contents: read
       attestations: write
       id-token: write
 
@@ -111,10 +111,10 @@ jobs:
             shasum -a 256 ${{ matrix.asset_name }} | cut -d ' ' -f 1 > ${{ matrix.asset_name }}.sha256
           fi
 
-      # - name: Attest binary
-      #   uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-      #   with:
-      #     subject-path: 'dist/${{ matrix.asset_name }}'
+      - name: Attest binary
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'dist/${{ matrix.asset_name }}'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -178,4 +178,10 @@ jobs:
           Choose the binary for your platform below.
 
           ### Verification
-          All binaries include SHA256 checksums for supply chain security."
+          All binaries include SHA256 checksums and signed build provenance attestations.
+
+          Verify a downloaded binary was built by this repository's release workflow:
+
+          \`\`\`
+          gh attestation verify ipseek-linux-x86_64 --repo $GITHUB_REPOSITORY
+          \`\`\`"
