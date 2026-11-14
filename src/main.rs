@@ -92,6 +92,25 @@ async fn main() -> Result<()> {
                         "Hello to IP Seek! Append your IP to the URL to use this service."
                     }),
                 )
+                // Static routes take priority over `/{ip}`, so these never hit the lookup.
+                .route(
+                    "/favicon.ico",
+                    axum::routing::get(|| async {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "image/x-icon")],
+                            include_bytes!("../assets/favicon.ico").as_slice(),
+                        )
+                    }),
+                )
+                .route(
+                    "/favicon.svg",
+                    axum::routing::get(|| async {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+                            include_str!("../assets/favicon.svg"),
+                        )
+                    }),
+                )
                 .route("/{ip}", axum::routing::get(server::check_ip))
                 .layer(axum::extract::Extension(state));
 
