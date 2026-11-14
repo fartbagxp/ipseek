@@ -308,6 +308,12 @@ The hooks run automatically on `git commit`. To run them manually against all fi
 pre-commit run --all-files
 ```
 
+To update pre-commit dependencies
+
+```bash
+pre-commit autoupdate --freeze
+```
+
 Hooks configured:
 
 | Hook                   | What it does                                              |
@@ -320,6 +326,16 @@ Hooks configured:
 | `fmt`                  | Runs `cargo fmt` — enforces Rust formatting               |
 | `cargo-check`          | Runs `cargo check` — catches compile errors before commit |
 | `gitleaks`             | Scans for secrets and credentials in staged changes       |
+
+### Cargo Dependencies
+
+To update cargo dependencies, install [cargo outdated](https://github.com/kbknapp/cargo-outdated) and run
+
+```bash
+cargo outdated -R
+```
+
+and then manually updated outdated packages and test them.
 
 ### Running Tests
 
