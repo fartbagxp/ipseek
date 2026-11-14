@@ -1,5 +1,10 @@
 # IPSeek
 
+[![Latest release](https://img.shields.io/github/v/release/fartbagxp/ipseek?sort=date)](https://github.com/fartbagxp/ipseek/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/fartbagxp/ipseek)](LICENSE)
+[![Build and Release](https://github.com/fartbagxp/ipseek/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/fartbagxp/ipseek/actions/workflows/release.yml)
+[![Fly Deploy](https://github.com/fartbagxp/ipseek/actions/workflows/fly-deploy.yml/badge.svg?branch=main)](https://ipseek.fly.dev/3.233.144.1)
+
 [IPSeek](https://ipseek.fly.dev) gives you information about whether a IP address belongs to: which cloud, which region, and which service is running on it.
 
 I use it by going to [https://ipseek.fly.dev/3.233.144.1](https://ipseek.fly.dev/3.233.144.1) and adding an IP address in the end of the URL and get an answer back. I needed a service like this because there were incidents in the past when I needed to figure out quickly where traffic were streaming in from.
@@ -154,6 +159,8 @@ The server runs on `http://0.0.0.0:8080`
 
 **GET /{ip}** - Lookup IP address
 
+**GET /favicon.ico**, **GET /favicon.svg** - Site icon
+
 The `data` object carries a backward-compatible **primary** match at the top
 level (`provider`, `prefix`, `region`, `service`, `metadata`, `kind`) plus two
 fields describing the full picture:
@@ -294,6 +301,7 @@ See `fly.toml` and `Dockerfile` for the configuration.
 - `src/lookup.rs` - CLI lookup logic with LPM (Longest Prefix Match)
 - `src/resolve.rs` - Turns matching ranges into the layered service-on-cloud answer
 - `src/server.rs` - HTTP server and API handlers
+- `assets/` - Favicon (`favicon.svg` is the source; `favicon.ico` is generated from it)
 - `tests/check_ip.rs` - Integration tests
 - `data/raw/` - Downloaded provider IP range files (JSON/TXT), created by `ipseek update`
 
