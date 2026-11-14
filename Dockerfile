@@ -1,4 +1,7 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+# Builder and runtime must use the same Debian release: the binary links against
+# the builder's glibc (aws-lc-sys C code needs glibc >= 2.38), so an older
+# runtime image fails at startup with "GLIBC_2.xx not found".
+FROM lukemathwalker/cargo-chef:latest-rust-1-trixie AS chef
 WORKDIR /app
 
 FROM chef AS planner
@@ -34,7 +37,7 @@ RUN mkdir -p /tmp/gov-asn && \
 RUN ./target/release/ipseek update-local --path ./data/raw --gov-asn-path /tmp/gov-asn
 
 # We do not need the Rust toolchain to run the binary!
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 WORKDIR /app
 
 # Install CA certificates for HTTPS requests
