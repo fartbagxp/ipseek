@@ -2,7 +2,7 @@
 
 [IPSeek](https://ipseek.fly.dev) gives you information about whether a IP address belongs to: which cloud, which region, and which service is running on it.
 
-I use it by going to [https://ipseek.fly.dev/3.233.144.1](https://ipseek.fly.dev/3.233.144.1) and adding an IP address in the end of the URL and get a JSON back.
+I use it by going to [https://ipseek.fly.dev/3.233.144.1](https://ipseek.fly.dev/3.233.144.1) and adding an IP address in the end of the URL and get an answer back. I needed a service like this because there were incidents in the past when I needed to figure out quickly where traffic were streaming in from.
 
 Most of these companies publish their IP ranges, but each one uses its own format at its own URL, and the lists change constantly. [aas-cidr-ranges](https://github.com/fartbagxp/aas-cidr-ranges) collects them. I load them into a single table and answers lookups against it using IPSeek. When a service runs on someone else's cloud, which is common for Software-as-a-Service providers, it reports both instead of picking one:
 
