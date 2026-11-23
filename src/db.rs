@@ -94,3 +94,40 @@ pub fn save_db(db: &DbFile, db_path: &str) -> Result<()> {
 
     Ok(())
 }
+
+/// Summary counts for a built database, used to publish release notes.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct DbStats {
+    /// Unique (prefix, provider) entries — what the README calls "ranges".
+    pub entries: usize,
+    /// Distinct prefixes regardless of provider.
+    pub unique_prefixes: usize,
+    pub ipv4: usize,
+    pub ipv6: usize,
+    pub providers: usize,
+    pub files: usize,
+    /// Entry count per provider, sorted by provider name.
+    pub by_provider: std::collections::BTreeMap<String, usize>,
+}
+
+pub fn compute_stats(db: &DbFile) -> DbStats {
+    let mut by_provider = std::collections::BTreeMap::new();
+    let mut prefixes = std::collections::HashSet::new();
+    let mut ipv6 = 0;
+    for e in &db.entries {
+        *by_provider.entry(e.provider.clone()).or_insert(0) += 1;
+        prefixes.insert(e.prefix.as_str());
+        if e.prefix.contains(':') {
+            ipv6 += 1;
+        }
+    }
+    DbStats {
+        entries: db.entries.len(),
+        unique_prefixes: prefixes.len(),
+        ipv4: db.entries.len() - ipv6,
+        ipv6,
+        providers: by_provider.len(),
+        files: db.files.len(),
+        by_provider,
+    }
+}
