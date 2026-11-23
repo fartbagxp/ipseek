@@ -916,3 +916,31 @@ async fn test_check_ip_malformed() {
 
     assert_eq!(json["error"], "Invalid IP address");
 }
+
+#[test]
+fn compute_stats_counts_entries() {
+    use ipseek::db::{compute_stats, DbFile, Metadata, StoredEntry};
+    let entry = |prefix: &str, provider: &str| StoredEntry {
+        prefix: prefix.to_string(),
+        provider: provider.to_string(),
+        region: None,
+        service: None,
+        metadata: Metadata::default(),
+    };
+    let db = DbFile {
+        entries: vec![
+            entry("13.32.0.0/15", "aws"),
+            entry("2600:9000::/28", "aws"),
+            entry("13.32.0.0/15", "cloudfront"),
+        ],
+        source_commit: None,
+        files: vec![],
+    };
+    let s = compute_stats(&db);
+    assert_eq!(s.entries, 3);
+    assert_eq!(s.unique_prefixes, 2);
+    assert_eq!(s.ipv4, 2);
+    assert_eq!(s.ipv6, 1);
+    assert_eq!(s.providers, 2);
+    assert_eq!(s.by_provider["aws"], 2);
+}

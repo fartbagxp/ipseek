@@ -276,6 +276,9 @@ ipseek update-local --path ./data/raw --gov-asn-path /path/to/gov-domains/data/a
 # Check a single IP
 ipseek check <IP_ADDRESS>
 
+# Print range counts (total, IPv4/IPv6, per provider) as JSON
+ipseek stats
+
 # Run HTTP server
 ipseek serve
 

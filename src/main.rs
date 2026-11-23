@@ -40,6 +40,8 @@ enum Commands {
     },
     /// Check a single IP address against the local DB
     Check { ip: String },
+    /// Print summary counts for the local DB as JSON
+    Stats,
     /// Run HTTP server
     Serve,
 }
@@ -75,6 +77,10 @@ async fn main() -> Result<()> {
             let db = db::load_db(&cli.db)?;
             let p = lookup::lookup_provider(db, &ip)?;
             println!("{} -> {}", ip, p);
+        }
+        Commands::Stats => {
+            let db = db::load_db(&cli.db)?;
+            println!("{}", serde_json::to_string_pretty(&db::compute_stats(&db))?);
         }
         Commands::Serve => {
             let db = db::load_db(&cli.db)?;

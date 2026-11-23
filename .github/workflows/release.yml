@@ -154,34 +154,64 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Build database and compute IP range stats
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+        run: |
+          BIN=./dist/ipseek-linux-x86_64
+          chmod +x "$BIN"
+          mkdir -p build
+          "$BIN" update --path build/raw --parallel 10
+          ./scripts/fetch-gov-asn.sh build/gov-asn
+          "$BIN" --db build/db.bin update-local --path build/raw --gov-asn-path build/gov-asn
+          "$BIN" --db build/db.bin stats | jq --arg v "$VERSION" '. + {version: $v}' > dist/stats.json
+
+          # Stats from the latest release, if it published them.
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern stats.json \
+            --output build/prev-stats.json 2>/dev/null || echo "No previous stats.json found"
+
+      - name: Write release notes
+        env:
+          VERSION: ${{ steps.get-version.outputs.version }}
+          RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
+        run: |
+          {
+            echo "## IP Seek $VERSION"
+            echo
+            echo "Automated release with binaries for Linux, macOS, and Windows."
+            echo
+            echo "**Release Type:** $RELEASE_TYPE"
+            echo
+            echo "### IP Ranges"
+            echo "Counts from the upstream data at release time. Run \`ipseek update --auto-build\` to fetch the latest."
+            echo
+            ./scripts/release-notes.sh dist/stats.json build/prev-stats.json
+            echo
+            echo "### Features"
+            echo "- Fast IP address lookup with cloud provider identification"
+            echo "- Rich metadata including region and service information"
+            echo "- HTTP API and CLI interface"
+            echo
+            echo "### Downloads"
+            echo "Choose the binary for your platform below. \`stats.json\` holds the full per-provider counts."
+            echo
+            echo "### Verification"
+            echo "All binaries include SHA256 checksums and signed build provenance attestations."
+            echo
+            echo "Verify a downloaded binary was built by this repository's release workflow:"
+            echo
+            echo '```'
+            echo "gh attestation verify ipseek-linux-x86_64 --repo $GITHUB_REPOSITORY"
+            echo '```'
+          } > build/notes.md
+          cat build/notes.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.get-version.outputs.version }}
-          RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'Manual Release' || 'Weekly Automated Release' }}
         run: |
           gh release create "$VERSION" dist/* \
             --title "Release $VERSION" \
-            --notes "## IP Seek $VERSION
-
-          Automated release with binaries for Linux, macOS, and Windows.
-
-          **Release Type:** $RELEASE_TYPE
-
-          ### Features
-          - Fast IP address lookup with cloud provider identification
-          - 74,000+ IP ranges from major cloud providers
-          - Rich metadata including region and service information
-          - HTTP API and CLI interface
-
-          ### Downloads
-          Choose the binary for your platform below.
-
-          ### Verification
-          All binaries include SHA256 checksums and signed build provenance attestations.
-
-          Verify a downloaded binary was built by this repository's release workflow:
-
-          \`\`\`
-          gh attestation verify ipseek-linux-x86_64 --repo $GITHUB_REPOSITORY
-          \`\`\`"
+            --notes-file build/notes.md
